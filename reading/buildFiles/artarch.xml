@@ -1,0 +1,162 @@
+<project name="artarch" basedir=".">
+  <description>
+    Tools related to working with the artarch code
+  </description>
+  
+  <property file="properties/hopper.properties"/>
+ 
+  <target name="load-building-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader" 
+    	fork="true"
+      	classpathref="compile.class.path"> 
+      <arg value="Building"/>
+      <arg value="${hopper.data.path}/BuildingArtifact.xml"/>
+    </java>
+  </target>
+
+<target name="load-coin-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Coin"/>
+      <arg value="${hopper.data.path}/CoinArtifact.xml"/>
+    </java>
+  </target>
+  
+  <target name="load-gem-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader"
+    	fork="true" 
+      	classpathref="compile.class.path">
+      <arg value="Gem"/>
+      <arg value="${hopper.data.path}/GemArtifact.xml"/>
+    </java>
+  </target>
+  
+  <target name="load-sculpture-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Sculpture"/>
+      <arg value="${hopper.data.path}/SculptureArtifact.xml"/>
+    </java>
+  </target>
+  
+  <target name="load-site-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader"
+    	fork="true" 
+      	classpathref="compile.class.path">     
+      <arg value="Site"/>
+      <arg value="${hopper.data.path}/SiteArtifact.xml"/>
+    </java>
+  </target>
+  
+  <target name="load-vase-artifacts">
+    <java classname="perseus.artarch.ArtifactLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+	  <arg value="Vase"/>
+      <arg value="${hopper.data.path}/VaseArtifact.xml"/>
+    </java>
+  </target>
+  
+  <target name="load-artifacts" 
+  	depends="load-building-artifacts,load-coin-artifacts,load-gem-artifacts,
+  			load-sculpture-artifacts,load-site-artifacts,load-vase-artifacts" />
+
+  <target name="load-building-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Building"/>
+    </java>
+  </target>
+  
+  <target name="load-coin-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true" 
+      	classpathref="compile.class.path">
+      <arg value="Coin"/>
+    </java>
+  </target>
+  
+  <target name="load-gem-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Gem"/>
+    </java>
+  </target>
+  
+  <target name="load-sculpture-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Sculpture"/>
+    </java>
+  </target>
+  
+  <target name="load-site-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Site"/>
+    </java>
+  </target>
+  
+  <target name="load-vase-occurrences">
+    <java classname="perseus.artarch.ArtifactOccurrenceLoader"
+    	fork="true"  
+      	classpathref="compile.class.path">
+      <arg value="Vase"/>
+    </java>
+  </target>
+  
+  <target name="load-artifact-occurrences" 
+  		depends="load-building-occurrences,load-coin-occurrences,
+  				load-gem-occurrences,load-sculpture-occurrences,
+  				load-site-occurrences,load-vase-occurrences"/>
+
+  <target name="load-images">
+    <java classname="perseus.artarch.image.ImgLoader"
+    	maxmemory="512m" 
+    	fork="true" 
+    	classpathref="compile.class.path">
+    </java>
+  </target>
+  
+  <target name="load-image-names">
+  	<java classname="perseus.artarch.image.ImageNameLoader" 
+  		fork="true" 
+  		maxmemory="256m" 
+  		classpathref="compile.class.path">
+      <arg value="${hopper.data.path}/ImageNames.xml"/>
+    </java>
+  </target>
+  
+  <target name="index-artifacts">
+	    <java classname="perseus.artarch.ArtifactIndexer" 
+	    	maxmemory="256m" 
+	    	fork="true" 
+	    	classpathref="compile.class.path">
+	      <sysproperty key="lucene.index.path" value="${lucene.index.path}"/>
+	    </java>
+  </target>
+
+  <target name="index-images">
+    <java classname="perseus.artarch.ArtifactImgIndexer"
+    	maxmemory="256m" 
+    	fork="true" 
+    	classpathref="compile.class.path">
+      <sysproperty key="lucene.index.path" value="${lucene.index.path}"/>
+    </java>
+  </target>
+  
+  <target name="load-keywords">
+	    <java classname="perseus.artarch.ArtifactKeywordLoader"
+	   		maxmemory="256m"
+	    	fork="true"  
+	      	classpathref="compile.class.path">
+	    </java>
+	  </target>
+
+</project>

@@ -1,0 +1,484 @@
+<project name="release" basedir=".">
+    <description>
+        Scripts for pushing out new releases, texts and other hopper
+        components.
+    </description>
+
+    <!--
+	A very basic synopsis of how to push out a release:
+
+	ant build-release
+	ant push-release -Dtarget.host.type=production
+
+	ant push-texts -Dtarget.host.type=production
+	ant push-index -Dtarget.host.type=production
+	ant load-table -Dtarget.host.type=production -Dtable.name=metadata
+    -->
+
+    <!--
+	Load all the properties we'll need for the the release process.
+	First, load properties specific to the target host, if one has been
+	specified on the command line (there's usually no reason to). Then
+	get the properties for the specified host-type ("production",
+	"development", etc.). Finally, load any unspecified properties from
+	the default settings.
+    -->
+    <property file="properties/hosts/${target.host}.properties" />
+    <property file="properties/hosttypes/${target.host.type}.properties" />
+    <property file="properties/hosts/DEFAULT.properties" />
+    <property file="properties/hosts/localhost.properties"/>
+
+    <!-- WEB-ARCHIVE BUILDING (deployment is at the bottom) -->
+
+    <target name="build-release" depends="jsp">
+	<!--
+	    Optional parameter:
+
+	    release.name - a descriptive name for the release, something like
+		DIONYSUS or MUSASHI or the like, will be appended to the
+		timestamp if present. This serves no real purpose right now,
+		but maybe we'll decide to start christening milestone releases
+		with interesting names.
+	-->
+
+	<property file="properties/release.properties" />
+		
+        <tstamp />
+        <property name="release.stamp" value="release-${DSTAMP}-${TSTAMP}" />
+
+	<!--
+	    If the user didn't specify a release tag, create our own.
+	 -->
+	<condition property="release.tag" value="${release.stamp}">
+	    <not><isset property="release.name" /></not>
+	</condition>
+	<property name="release.tag" value="${release.stamp}-${release.name}" />
+
+        <property name="release.dir"
+            value="${hopper.staged.application.path}" />
+
+	<!-- Create a directory for this particular release. -->
+        <property name="this.release.dir"
+	    value="${release.dir}/${release.tag}" />
+
+	<mkdir dir="${this.release.dir}" />
+        <echo file="${this.release.dir}/version.txt" message="${release.tag}" />
+        <echo file="last.release.txt" message="${release.tag}" />
+
+	<!--
+	    Copy everything we need in our various directories to the
+	    release directory...
+
+	    (the copy command excludes CVS files by default, happily)
+	-->
+
+	<!-- Static files... -->
+	<copy todir="${this.release.dir}/static">
+	    <fileset dir="static">
+	    	<!-- Don't copy large numbers of XML files in the static directory -->
+	    	<exclude name="**/*places.xml"/>
+	    	<exclude name="**/data/**"/>
+	    </fileset>
+	</copy>
+	<!-- Stylesheets... -->
+	<copy todir="${this.release.dir}/xslt">
+	    <fileset dir="xslt" />
+	</copy>
+	<!-- Anything else in WEB-INF (configuration files, likely)... -->
+	<copy todir="${this.release.dir}/WEB-INF">
+	    <fileset dir="${dist}" excludes="lib" />
+	</copy>
+
+	<!-- Copy all html, htm, and pdf files -->
+	<copy todir="${this.release.dir}">
+	    <fileset dir="jsp">
+	        <include name="**/*.htm"/>
+		<include name="**/*.html"/>	
+		<include name="**/*.pdf"/>
+	    </fileset>
+	</copy>
+
+	<!-- Anything in META-INF.
+	-->
+	<copy todir="${this.release.dir}/META-INF">
+	    <fileset dir="${dist}/../META-INF" />
+	</copy>
+
+	<!-- And, finally, JARs. -->
+	<copy todir="${this.release.dir}/lib">
+	    <fileset dir="${dist}/lib" />
+	</copy>
+    </target>
+
+    <target name="build-war">
+	<!--
+	    This builds a WAR file from a set of release files from the
+	    previous target.
+
+	    Required parameters:
+
+	    ONE of the following:
+		target.host - the server for which the release is meant.
+		    It should match the name of a .properties file in
+		    properties/hosts.
+		target.host.type - the type of release to build ("production",
+		    "development", and so on).
+
+	    Optional parameter:
+
+	    release.tag - the tag of the release to push out, like
+		release-20051234-5678-FRED. If no value is specified, we use
+		the most recent release.
+	-->
+	<!--
+	<fail message="Need to specify a valid value for target.host[.type]!">
+	    <condition>
+		<and>
+		    <not><isset property="target.host" /></not>
+		    <not><isset property="target.host.type" /></not>
+		</and>
+	    </condition>
+	</fail>
+	-->
+
+	<!-- If we don't have a specific host, just use the host-type -->
+	<property name="target.host" value="${target.host.type}" />
+
+	<!-- If the caller didn't specify a release tag, assume the most
+	    recent one -->
+	<loadfile property="release.tag" srcFile="last.release.txt" />
+        <property name="this.release.dir"
+	    value="${hopper.staged.application.path}/${release.tag}" />
+
+	<property file="properties/release.properties" />
+
+	<!--
+	    We can copy everything else as is - but we need to rebuild the
+	    JAR file with its properties expanded for the specified target
+	    host, as opposed to for the default settings.
+	-->
+	<antcall target="create-jar">
+	    <param name="jarfile"
+		   value="${this.release.dir}/lib/hopper.jar" />
+	</antcall>
+	<tempfile prefix="hopper-" property="temp.release.dir" />
+	<mkdir dir="${temp.release.dir}" />
+	<copy todir="${temp.release.dir}">
+	    <fileset dir="${this.release.dir}">
+		<include name="xslt/**" />
+		<!-- Don't filter images. It can cause bad things to happen. -->
+		<exclude name="static/img/**" />
+		<exclude name="static/data/**" />
+		<include name="static/**" />
+	    <exclude name="static/**/*places.xml"/>
+		<include name="META-INF/**" />
+
+		<!--
+		    Don't bother copying lib and classes, since it's *very*
+		    unlikely that class files will have any tokens to be
+		    expanded. Later on, tell the war to grab them from
+		    this.release.dir.
+		-->
+		<exclude name="WEB-INF/lib/**" />
+		<exclude name="WEB-INF/classes/**" />
+		<include name="WEB-INF/**" />
+		<include name="**"/>
+	    </fileset>
+	    <filterchain>
+		<expandproperties />
+	    </filterchain>
+	</copy>
+
+	<!-- copy images separately -->
+	<copy todir="${temp.release.dir}">
+	    <fileset dir="${this.release.dir}">
+		<include name="static/img/**" />
+	    </fileset>
+	</copy>
+
+	<!--
+	    Now keep web.xml out of the WEB-INF directory, just for the
+	    sake of cleanliness. We tell the WAR task to include it
+	    separately from everything else (see the actual task below), and
+	    we don't need multiple copies floating around.
+	-->
+	<move file="${temp.release.dir}/WEB-INF/web.xml"
+		tofile="${temp.release.dir}/web.xml" />
+
+	<property name="target.dir"
+	    value="${hopper.staged.application.path}/${target.host}/${release.tag}" />
+	<mkdir dir="${target.dir}" />
+
+	<!-- Now, finally, create the actual WAR, ready to be pushed out. -->
+	<war destfile="${target.dir}/hopper.war"
+	    webxml="${temp.release.dir}/web.xml">
+
+	    <classes dir="${this.release.dir}/WEB-INF/classes" />
+	    <webinf dir="${temp.release.dir}/WEB-INF" />
+	    <metainf dir="${temp.release.dir}/META-INF" />
+	    <lib dir="${this.release.dir}/lib" includes="*.jar" />
+	    <fileset dir="${this.release.dir}" includes="**/*.htm,
+	    **/*.html, **/*.pdf"/>
+	</war>
+	<copy todir="${target.dir}">
+	    <fileset dir="${temp.release.dir}">
+		<include name="static/**" />
+		<include name="xslt/**" />
+	    </fileset>
+	</copy>
+	
+	<delete dir="${temp.release.dir}" />
+    </target>
+
+	<!-- For local machine -->
+    <target name="install" description="Install application in Tomcat" depends="build-war">
+      <deploy url="${localhost.tomcat.manager.url}"
+              username="${localhost.tomcat.manager.username}"
+              password="${localhost.tomcat.manager.password}"
+              path="${localhost.tomcat.webapp.path}"
+              war="file:${hopper.staged.application.path}/development/${release.tag}/hopper.war"/>
+    </target>
+  
+    <target name="remove" description="Remove application in Tomcat">
+      <undeploy url="${localhost.tomcat.manager.url}"
+                username="${localhost.tomcat.manager.username}"
+                password="${localhost.tomcat.manager.password}"
+                path="${localhost.tomcat.webapp.path}"/>
+    </target>
+    
+    <target name="reload" description="Reload application in Tomcat">
+      <reload url="${localhost.tomcat.manager.url}"
+              username="${localhost.tomcat.manager.username}"
+              password="${localhost.tomcat.manager.password}"
+              path="${localhost.tomcat.webapp.path}"/>
+    </target>
+   
+    <target name="start" description="Start Tomcat application">
+      <start url="${localhost.tomcat.manager.url}"
+              username="${localhost.tomcat.manager.username}"
+              password="${localhost.tomcat.manager.password}"
+              path="${localhost.tomcat.webapp.path}"/>          
+    </target> 
+
+    <target name="stop" description="Stop Tomcat application">
+      <stop url="${localhost.tomcat.manager.url}"
+              username="${localhost.tomcat.manager.username}"
+              password="${localhost.tomcat.manager.password}"
+              path="${localhost.tomcat.webapp.path}"/>          
+    </target>
+
+    <!-- TEXTS -->
+
+    <target name="dump-texts">
+	<sync todir="${hopper.staged.texts.path}">
+	    <fileset dir="${hopper.document.file.path}">
+		<exclude name="**/*.met.xml" />
+		<include name="**/*.xml" />
+	    </fileset>
+	</sync>
+    </target>
+    
+    <target name="dump-cache">
+        <sync todir="${hopper.staged.cache.path}">
+	    <fileset dir="${hopper.cache.path}">
+	        <include name="**/*.xml" />
+	    </fileset>
+	</sync>
+    </target>
+
+    <target name="push-texts" depends="dump-texts, dump-cache">
+	<for param="server" list="${hosttype.target.servers}">
+	    <sequential>
+		<echo message="Copying texts for @{server}" />
+		<ant target="push-texts-host" inheritAll="false">
+		    <property name="target.host" value="@{server}" />
+		</ant>
+	    </sequential>
+	</for>
+    </target>
+
+    <target name="push-texts-host" depends="sync-texts, sync-cache">
+    </target>
+
+    <target name="sync-texts">
+	<antcall target="do-rsync">
+	    <param name="release.rsync.flags" value="W" />
+	    <param name="release.local.directory"
+		    value="${hopper.staged.texts.path}/" />
+	    <param name="release.remote.directory"
+		    value="${target.host.document.file.path}" />
+	</antcall>
+    </target>
+
+    <target name="sync-cache">
+        <antcall target="do-rsync">
+	    <param name="release.rsync.flags" value="W" />
+	    <param name="release.local.directory"
+	            value="${hopper.staged.cache.path}/" />
+	    <param name="release.remote.directory"
+	            value="${target.host.cache.path}" />
+	</antcall>
+    </target>
+
+    <!-- SEARCH INDICES -->
+
+    <target name="dump-index">
+	<sync todir="${hopper.staged.index.path}">
+	    <fileset dir="${hopper.search.index.path}">
+		<include name="**/*" />
+	    </fileset>
+	</sync>
+    </target>
+
+    <target name="push-index" depends="dump-index">
+	<for param="server" list="${hosttype.target.servers}">
+	    <sequential>
+		<echo message="Copying indices for @{server}" />
+		<ant target="push-index-host" inheritAll="false">
+		    <property name="target.host" value="@{server}" />
+		</ant>
+	    </sequential>
+	</for>
+    </target>
+
+    <target name="push-index-host" depends="sync-index">
+    </target>
+
+    <target name="sync-index" depends="dump-index">
+	<property file="${target.host}.properties" />
+	<antcall target="do-rsync">
+	    <param name="release.rsync.flags" value="" />
+	    <param name="release.local.directory"
+		    value="${hopper.staged.index.path}/" />
+	    <param name="release.remote.directory"
+		    value="${target.host.search.index.path}" />
+	</antcall>
+    </target>
+
+    <!-- RELEASE/WAR STUFF -->
+    
+    <target name="undeploy-release-host">
+	<!--
+	    Required parameter:
+
+	    target.host - the host to deploy to, which should have a
+		.properties file defined in the hosts/ directory
+
+	    Optional parameter:
+
+	    fail.on.error - if we're unable to deploy the application
+		(e.g., if there's no application running), do we care?
+		(Defaults to true.)
+
+		Uh... apparently the task doesn't like this attribute, so
+		we don't use it for now.
+	-->
+
+	<property name="fail.on.error" value="true" />
+
+        <undeploy url="${target.host.tomcat.manager.url}"
+            username="${target.host.tomcat.manager.username}"
+            password="${target.host.tomcat.manager.password}"
+            path="${target.host.tomcat.webapp.path}" />
+    </target>
+
+    <!-- Pushes out releases to all servers of the given type.
+    
+	Optional parameter:
+	    release.tag - the release version, like release-20050123-4567
+	    (defaults to the value in last.release.txt)
+	
+	Required parameter:
+	    target.host.type
+    -->
+    <target name="push-release">
+	<loadfile property="release.tag" srcFile="last.release.txt" />
+	<!-- Assume production properties if the user hasn't specified -->
+	<for param="server" list="${hosttype.target.servers}">
+	    <sequential>
+		<echo message="Activating release for @{server}" />
+		<ant target="push-release-host" inheritAll="false">
+		    <property name="target.host" value="@{server}" />
+		    <property name="release.tag" value="${release.tag}" />
+		</ant>
+	    </sequential>
+	</for>
+    </target>
+
+    <target name="push-release-host" depends="build-war">
+	<!--
+	    Required parameters:
+
+	    target.host - the host to deploy to, which should have a
+		.properties file defined in the hosts/ directory
+
+	    Optional:
+
+	    release.tag - the target release's tag, like release-20056789-1234
+		(default to the most recent release)
+	-->
+
+	<!-- If the caller didn't specify a release tag, assume the most
+	    recent one -->
+	<loadfile property="release.tag" srcFile="last.release.txt" />
+
+	<property name="local.path"
+	 value="${hopper.staged.application.path}/${target.host}" />
+	<property name="local.release.dir"
+	 value="${local.path}/${release.tag}" />
+
+	<!-- Deploy! For great justice! -->
+	<echo message="Deploying to ${target.host.tomcat.manager.url}" />
+        <deploy url="${target.host.tomcat.manager.url}"
+            username="${target.host.tomcat.manager.username}"
+            password="${target.host.tomcat.manager.password}"
+            path="${target.host.tomcat.webapp.path}"
+	    war="file:${local.path}/${release.tag}/hopper.war"
+	    tag="${release.tag}"
+	    update="true" />
+
+	<!-- Now copy the static files... -->
+    <echo message="Copying static files..."/>
+	<scp keyfile="${target.host.ssh.key}"
+	     passphrase="${target.host.ssh.passphrase}"
+	     todir="${target.host.login}@${target.host.hostname}:${target.host.docroot.path}"
+	     sftp="true">
+	     <fileset dir="${local.release.dir}/static">
+			<include name="**" />
+	     </fileset>
+	</scp>
+    
+    <echo message="Copying places xml files separately..."/>
+   	<scp keyfile="${target.host.ssh.key}"
+    	 passphrase="${target.host.ssh.passphrase}"
+    	 todir="${target.host.login}@${target.host.hostname}:${target.host.docroot.path}/xml"
+   	     sftp="true">
+    	<fileset dir="${hopper.static.files.path}/xml">
+        	<include name="*places.xml"/>
+        </fileset>
+    </scp>
+	
+	<!-- And the XSLT. -->
+    <echo message="Copying XSLT files..."/>
+	<scp keyfile="${target.host.ssh.key}"
+	     passphrase="${target.host.ssh.passphrase}"
+	     todir="${target.host.login}@${target.host.hostname}:${target.host.stylesheet.path}"
+	     sftp="true">
+	     <fileset dir="${local.release.dir}/xslt" />
+	</scp>
+    </target>
+
+    <!-- UTILITY METHODS, for copying things -->
+
+    <target name="do-rsync">
+	<tempfile prefix="rsync-" property="rsync.file" />
+	<echo file="${rsync.file}"><![CDATA[
+	    rsync -e "ssh -c blowfish" --delete -Cavz${release.rsync.flags} ${release.local.directory} ${target.host.login}@${target.host.hostname}:${release.remote.directory}
+	]]></echo>
+
+	<exec executable="sh">
+	    <arg value="${rsync.file}" />
+	</exec>
+	<delete file="${rsync.file}" />
+    </target>
+</project>

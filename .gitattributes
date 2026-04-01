@@ -1,0 +1,2 @@
+xml/data/greek.morph.xml filter=lfs diff=lfs merge=lfs -text
+xml/data/latin.morph.xml filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,279 @@
+<project name="metadata" basedir=".">
+
+    <property file="properties/hopper.properties" />
+	<property name="maxmem" value="2048m"/>
+
+	<!-- Metadata Tasks -->
+    <target name="clear-metadata" description="clear metadata">
+	<java classname="perseus.document.MetadataLoader"
+			fork="true"
+	    	classpathref="compile.class.path">
+	    <arg value="--clear" />
+	</java>
+    </target>
+	
+    <target name="load-metadata" description="load metadata">
+		<java classname="perseus.document.MetadataLoader" 
+				fork="true"
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+		    <arg value="-ir" />
+		</java>
+    </target>
+
+	<!-- Text Chunking -->
+    <!--
+	Optional parameters:
+		force - force load even if the document hasn't changed
+	    documents - one or more files to scan
+			    (otherwise, we scan every document)
+    -->
+    <target name="chunkify" description="chunkify texts/collections/whatever">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+    
+    <java classname="perseus.chunking.CorpusChunkifier" 
+			fork="true"
+    		maxmemory="${maxmem}"
+			classpathref="compile.class.path">
+	    <arg line="${options} ${documents}" />
+	</java>
+    </target>
+
+	<!-- Lexicon Links -->
+	<target name="lexicon-entries" description="link lexicon entries">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.morph.LexiconEntryLoader"
+				fork="true"
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+	</target>
+	
+	<!-- Morphology -->
+	<target name="load-parses" description="load parses from morphology XML" 
+		depends="load-greek-parses, load-latin-parses, load-non-parses, load-arabic-parses" />
+	
+	<target name="load-greek-parses" description="load Greek parses from morphology XML">
+		<java classname="perseus.morph.ParseLoader"
+				fork ="true"
+	    		maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${hopper.data.path}/greek.morph.xml" />
+		</java>
+	</target>
+	
+	<target name="load-latin-parses" description="load Latin parses from morphology XML">
+		<java classname="perseus.morph.ParseLoader"
+				fork ="true"
+	    		maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${hopper.data.path}/latin.morph.xml" />
+		</java>
+	</target>
+	
+	<target name="load-non-parses" description="load Old Norse parses from morphology XML">
+		<java classname="perseus.morph.ParseLoader"
+				fork ="true"
+	    		maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${hopper.data.path}/non.morph.xml" />
+		</java>
+	</target>
+	
+	<target name="load-arabic-parses" description="load Arabic parses from morphology XML">
+		<java classname="perseus.morph.ParseLoader"
+				fork ="true"
+	    		maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${hopper.data.path}/arabic.morph.xml" />
+		</java>
+	</target>
+	
+	<!-- Word Counts -->
+	<target name="load-wordcounts" description="load word counts">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.document.WordCountLoader" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+	</target>
+	
+	<!-- Create indexes -->
+	<target name="build-indexes" description="create lucene indexes">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.search.nu.CorpusIndexer" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+	</target>
+
+	<!-- Optimize indexes -->
+	<target name="optimize-indexes" description="optimize lucene indexes">
+		<java classname="perseus.search.nu.CorpusIndexer" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="--optimize"/>
+		</java>
+	</target>
+	
+	<!-- Lexicon indexes -->
+	<target name="lexicon-indexes" description="create lexicon indexes">
+	<property name="language" value="" />
+		<java classname="perseus.search.LexiconIndexer" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${language}"/>
+		</java>
+	</target>
+	
+	<!-- Word Frequencies -->
+	<target name="load-wordfrequencies" description="calculate frequencies">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.ie.freq.WordFrequencyLoader" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+	</target>
+	
+	<!-- Document Counts -->
+	<!-- 
+		Parameter:
+			options - either 'lemmas' or 'entities' 
+	-->
+	<target name="load-documentcounts" description="load IDF and document counts">
+		<java classname="perseus.ie.freq.DocumentCountLoader" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${options}"/>
+		</java>
+	</target>
+
+	<!-- Citation Extractor -->
+    <!--
+	Parameter:
+	    documents - one or more files to scan for citations
+			(otherwise, we scan every loaded document)
+    -->
+    <target name="extract-citations" description="extract and load citations from texts">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.ie.CitationExtractor" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+    </target>
+	
+	<!-- Senses -->
+	<target name="load-senses" description="load senses for sense-voting">
+		<java classname="perseus.voting.SenseLoader" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg value="${document}"/>
+		</java>
+	</target>
+	
+	<!-- Morphological frequencies -->
+	<target name="aggregate-morphcode" description="load prior and feature frequencies">
+		<java classname="perseus.morph.MorphCodeAggregator" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+		</java>
+	</target>
+	
+	<!-- Places -->
+	<target name="load-places" description="load places from xml files, used to be in atlas table">
+		<java classname="perseus.ie.entity.PlaceLoader"
+			fork="true"
+			maxmemory="${maxmem}"
+			classpathref="compile.class.path">
+		</java>
+	</target>
+
+	<target name="create-places-xml" description="get top occurrences
+	of places in entire corpus and each collection">
+		<java classname="perseus.visualizations.PlacesXMLCreator"
+			fork="true"
+			maxmemory="${maxmem}"
+			classpathref="compile.class.path">
+		</java>
+	</target>
+	    
+	
+	<!-- Entity Extractor -->
+	<target name="extract-entities" description="extract entities">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.ie.entity.EntityExtractor" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${documents} ${options}"/>
+		</java>
+	</target>
+	
+	<!-- Languages -->
+	<target name="load-languages" description="load languages and language abbreviations">
+	   	<java classname="perseus.language.LanguageLoader" 
+				fork="true" 
+	   			classpathref="compile.class.path">
+	  		<arg value="properties/languages.properties"/>
+		</java>
+	</target>
+	
+		<!-- Distinct Word Counts -->
+	<target name="load-distinct-counts" description="load distinct word counts">
+	<property name="documents" value="" />
+	<property name="options" value="" />
+		<java classname="perseus.visualizations.DistinctWordCountPerYearLoader" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+			<arg line="${options} ${documents}"/>
+		</java>
+	</target>
+	
+	<target name="create-timeplot-files" description="calculate frequencies">
+		<java classname="perseus.visualizations.TimeplotFilesCreator" 
+				fork="true" 
+    			maxmemory="${maxmem}"
+				classpathref="compile.class.path">
+		</java>
+	</target>
+	
+	<target name="cruncher2xml" description="convert morpheus output to XML">
+		<java classname="perseus.morph.CruncherToXML"
+			fork="true"
+			maxmemory="${maxmem}"
+			classpathref="compile.class.path">
+			<arg line="${inputFile} ${outputFile} ${options}"/>
+		</java>
+	</target>
+	
+	<target name="text-encoding" description="convert text between different encodings for Greek and Arabic">
+		<java classname="perseus.document.TextEncodingConverter"
+			fork="true"
+			maxmemory="${maxmem}"
+			classpathref="compile.class.path">
+			<arg line="${inputFile} ${outputFile} --inputFormat=${inputFormat} --outputFormat=${outputFormat} --language=${language}"/>
+		</java>
+	</target>
+</project>

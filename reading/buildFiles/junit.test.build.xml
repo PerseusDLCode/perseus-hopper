@@ -1,0 +1,64 @@
+<!-- Developed jointly at Tufts University and Johns Hopkins University by The Perseus Project and Digital Collections and Archives at Tufts and The Digital Knowledge Center at Johns Hopkins.  License and Copyright: The contents of this file are subject to the Mozilla Public License Version 1.1 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at http://www.mozilla.org/MPL/.  Software distributed under the License is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License for the specific language governing rights and limitations under the License.  The entire file consists of original code.  Copyright 2004 Tufts University. All rights reserved. 
+Last Modified: Monday, December 12 2005 at 16:25:59
+-->
+<project name="Hopper Testing Framework" default="junit" basedir=".">
+
+  <property name="build" location="build"/>
+  <property name="dist" location="jsp/WEB-INF/lib"/>
+  <property file="properties/test.properties"/>
+  <property file="properties/hopper.properties"/>
+
+  <target name="junit" depends="compile,test-compile">
+  <junit printsummary="true" haltonfailure="false" maxmemory="512m">
+    <sysproperty key="DRIVER" value="${DRIVER}"/>
+    <sysproperty key="DBURL" value="${DBURL}"/>
+    <sysproperty key="LOGIN" value="${LOGIN}"/>
+    <sysproperty key="PASSWD" value="${PASSWD}"/>
+    <sysproperty key="java.naming.factory.initial" value="org.apache.naming.java.javaURLContextFactory"/>
+    <classpath refid="test.classpath"/>
+    <formatter type="brief" usefile="false"/>
+    <formatter type="xml"/>
+    <batchtest todir="${test.data.dir}">
+      <fileset dir="${test.dir}">
+	<include name="**/*Test.*" />
+      </fileset>
+    </batchtest>
+  </junit>
+  <junitreport todir="${test.data.dir}">
+    <fileset dir="${test.data.dir}">
+      <include name="TEST-*.xml"/>
+    </fileset>
+    <report format="frames" todir="${test.reports.dir}"/>
+  </junitreport> 
+  </target>
+
+  <!-- make sure to compile the hopper src-->
+  <target name="test-compile" depends="test-init">
+    <javac destdir="${test.dir}"
+           includeAntRuntime="true"
+           srcdir="${test.src}">
+      <classpath refid="test.classpath"/>
+      <include name="**/*Test.java"/>
+    </javac>
+  </target>
+
+  <!-- Depends on hib-init -->
+  <target name="test-init">
+    <mkdir dir="${test.dir}"/>
+    <mkdir dir="${test.reports.dir}"/>
+    <mkdir dir="${test.data.dir}"/>
+  </target>
+
+  <target name="test-clean">
+    <delete dir="${test.dir}"/>
+    <delete dir="${test.reports.dir}"/>
+    <delete dir="${test.data.dir}"/>    
+  </target>
+ 
+  <path id="test.classpath">
+    <path refid="test.class.path"/>
+    <pathelement location="${build}/classes"/>
+    <pathelement location="${build}/testing"/>
+  </path>
+
+</project>

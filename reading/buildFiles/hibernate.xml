@@ -1,0 +1,71 @@
+<project name="hibernate" default="schema-export" basedir=".">
+    <description>
+	Hibernate-related tasks.
+    </description>
+
+    <taskdef name="hibernatetool"
+	     classname="org.hibernate.tool.ant.HibernateToolTask"
+	     classpathref="hibernate.class.path" />
+		
+    <target name="schema-export">
+        <hibernatetool destdir=".">
+            <annotationconfiguration
+                configurationfile="build/hibernate.cfg.xml" />
+            <hbm2ddl drop="true" export="false"
+                outputfilename="hibernate.sql" />
+        </hibernatetool>
+        <echo>
+    SQL exported to hibernate.sql. Have a good day.
+
+    To load a specific table, try something like:
+        grep my_table_name hibernate.sql | mysql &lt;DB parameters&gt;
+        </echo>
+    </target>
+
+    <target name="hbm2java">
+        <hibernatetool destdir="generated">
+            <annotationconfiguration
+                configurationfile="build/hibernate.cfg.xml" />
+            <hbm2java jdk5="true" />
+        </hibernatetool>
+    </target>
+
+    <target name="hbm2dao">
+        <hibernatetool destdir="generated">
+            <annotationconfiguration
+                configurationfile="build/hibernate.cfg.xml" />
+            <hbm2dao />
+        </hibernatetool>
+    </target>
+
+  <target name="schema-validate">
+    <taskdef name="schemavalidator"
+    classname="org.hibernate.tool.hbm2ddl.SchemaValidatorTask" classpathref="test.class.path"/>
+      
+    <schemavalidator properties="properties/hopper.properties">
+      <fileset dir="${src}">
+        <include name="**/*.hbm.xml"/>
+      </fileset>
+    </schemavalidator>
+  </target>
+
+  <target name="schema-update">
+    <taskdef name="schemaupdate"
+    classname="org.hibernate.tool.hbm2ddl.SchemaUpdateTask" classpathref="test.class.path"/>
+    
+    <schemaupdate properties="properties/hopper.properties" quiet="no">
+      <fileset dir="${src}">
+        <include name="**/*.hbm.xml"/>
+      </fileset>
+    </schemaupdate>
+  </target>
+
+  <target name="doc" description="build javadocs">
+    <javadoc sourcepath="${src}" destdir="${docs}">
+      <packageset dir="${src}" defaultexcludes="yes">
+        <include name="perseus/**" />
+      </packageset>
+    </javadoc>
+  </target>
+
+</project>
