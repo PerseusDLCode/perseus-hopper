@@ -41,6 +41,28 @@ guessed language first. Options:
 -h, --help
 ```
 
+## Frequency aggregation
+
+Once `morph.db` has lemmas/parses loaded (see Usage above), walk a directory
+of `canonical-greekLit` / `canonical-latinLit` / `First1KGreek`-style TEI
+files to populate `morph_frequencies` and `prior_frequencies`
+(`perseus-morph.frequencies.aggregator`'s tables), mirroring
+`perseus.morph.MorphCodeAggregator`:
+
+```sh
+clj -M -m perseus-morph.aggregate ../corpora
+```
+
+By default this writes to `./morph.db`, same as `perseus-morph.core`. Files
+that don't look like a Greek or Latin primary text (translations,
+`__cts__.xml` metadata, ...) are skipped; see
+`perseus-morph.corpus-walker/guess-language-code`. Options:
+
+```
+-d, --db PATH  Path to the SQLite database file (default: morph.db)
+-h, --help
+```
+
 ## Tests
 
 ```sh

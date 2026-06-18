@@ -82,12 +82,11 @@
   (testing "stoplisting is the caller's responsibility: simulating a stoplisted
             token by simply not calling update-prior-counts for it, and not
             carrying its parses forward as `previous-parses` for the next token"
-    (let [tok-a {:part_of_speech "noun"}    ; previous-parses going in
-          tok-b {:part_of_speech "particle"} ; stoplisted - skipped entirely
-          tok-c {:part_of_speech "verb"}]
-      (let [counts (agg/update-prior-counts {} "greek" [tok-a] tok-c 1.0)]
-        (is (= 1.0 (get counts ["greek" {:part_of_speech "noun"} {:part_of_speech "verb"}])))
-        (is (nil? (get counts ["greek" {:part_of_speech "particle"} {:part_of_speech "verb"}])))))))
+    (let [tok-a {:part_of_speech "noun"}
+          tok-c {:part_of_speech "verb"}
+          counts (agg/update-prior-counts {} "greek" [tok-a] tok-c 1.0)]
+      (is (= 1.0 (get counts ["greek" {:part_of_speech "noun"} {:part_of_speech "verb"}])))
+      (is (nil? (get counts ["greek" {:part_of_speech "particle"} {:part_of_speech "verb"}]))))))
 
 (deftest write-morph-counts!-test
   (let [db (temp-db)
