@@ -6,40 +6,20 @@
    the original Java code did), since we don't have that lexicon data here."
   (:require [clojure.string]
             [next.jdbc :as jdbc]
+            [perseus-morph.features :as features]
             [perseus-morph.language :as lang]
             [perseus-morph.transcoder :as transcoder]
             [perseus-morph.xml-parser :as xml-parser])
   (:import (java.io File)))
 
-(def ^:private feature-columns
-  "Map of <feature-tag> -> parses column name, for every tag that can
-   appear in an <analysis> besides form/lemma/orth."
-  {"pos" :part_of_speech
-   "person" :person
-   "number" :number
-   "tense" :tense
-   "mood" :mood
-   "voice" :voice
-   "gender" :gender
-   "case" :grammatical_case
-   "degree" :degree
-   "dialect" :dialect
-   "feature" :other
-   "prefix" :prefix
-   "object" :object
-   "definite" :definite
-   "possessive" :possessive})
-
-(def ^:private feature-column-order
-  "Stable order in which feature values are folded into dedup-key."
-  (vec (sort (vals feature-columns))))
+(def ^:private feature-columns features/feature-tag->column)
 
 (defn- dedup-key
   "Folds a row's feature columns into a single NOT NULL string so the
    `parses` UNIQUE constraint can actually detect duplicates; see the
    comment on dedup_key in perseus-morph.schema."
   [row]
-  (clojure.string/join "" (map #(get row % "") feature-column-order)))
+  (features/fold-key row))
 
 (defn guess-language-code
   "Mirrors ParseLoader.main()'s filename-based language guess: the language
