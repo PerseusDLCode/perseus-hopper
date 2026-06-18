@@ -10,4 +10,5 @@
                       {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
          :main-opts ["-m" "cognitect.test-runner"]}
   :load {:main-opts ["-m" "perseus-morph.loader.load"]}
-  :aggregate {:main-opts ["-m" "perseus-morph.frequencies.aggregate"]}}}
+  :aggregate {:main-opts ["-m" "perseus-morph.frequencies.aggregate"]}
+  :ingest {:main-opts ["-m" "perseus-morph.lexica.ingest"]}}}
