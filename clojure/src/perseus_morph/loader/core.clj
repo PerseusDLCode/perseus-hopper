@@ -1,4 +1,4 @@
-(ns perseus-morph.loader
+(ns perseus-morph.loader.core
   "Loads a greek.morph.xml / latin.morph.xml file into SQLite, replacing
    perseus.morph.ParseLoader's MySQL/Hibernate-based loading. Lemmas are
    created on the fly from the <lemma> tags in the morph XML itself (rather
@@ -7,17 +7,17 @@
   (:require [clojure.string]
             [next.jdbc :as jdbc]
             [perseus-morph.features :as features]
-            [perseus-morph.language :as lang]
-            [perseus-morph.transcoder :as transcoder]
-            [perseus-morph.xml-parser :as xml-parser])
-  (:import (java.io File)))
+  [perseus-morph.language :as lang]
+  [perseus-morph.loader.xml-parser :as xml-parser]
+  [perseus-morph.transcoder :as transcoder])
+ (:import (java.io File)))
 
 (def ^:private feature-columns features/feature-tag->column)
 
 (defn- dedup-key
   "Folds a row's feature columns into a single NOT NULL string so the
    `parses` UNIQUE constraint can actually detect duplicates; see the
-   comment on dedup_key in perseus-morph.schema."
+   comment on dedup_key in perseus-morph.loader.schema."
   [row]
   (features/fold-key row))
 

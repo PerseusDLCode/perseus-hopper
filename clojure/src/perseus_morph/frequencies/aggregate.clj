@@ -1,14 +1,15 @@
-(ns perseus-morph.aggregate
+(ns perseus-morph.frequencies.aggregate
   "CLI entry point, mirroring perseus.morph.MorphCodeAggregator's main(): walks
    a directory of corpus TEI files, tokenizing each Greek/Latin primary text
    and writing its morph/prior frequency counts (see
    perseus-morph.frequencies.aggregator) into the same SQLite database
-   perseus-morph.core populated with lemmas/parses."
+   perseus-morph.loader.core populated with lemmas/parses."
   (:require [clojure.string]
             [clojure.tools.cli :as cli]
             [next.jdbc :as jdbc]
-            [perseus-morph.corpus-walker :as walker]
-            [perseus-morph.frequencies.schema :as freq-schema])
+            [perseus-morph.frequencies.document :as doc-schema]
+            [perseus-morph.frequencies.schema :as freq-schema]
+            [perseus-morph.walker.core :as walker])
   (:gen-class))
 
 (def cli-options
@@ -35,6 +36,7 @@
       (let [dir (first arguments)
             db (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
         (freq-schema/init-db! db)
+        (doc-schema/init-db! db)
         (println "Walking" dir "into" (:db options))
         (let [result (walker/walk! db dir)]
           (println "Done:" result))))))

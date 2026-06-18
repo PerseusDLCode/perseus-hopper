@@ -1,4 +1,4 @@
-(ns perseus-morph.schema
+(ns perseus-morph.loader.schema
   "DDL for the SQLite replacement of the `hib_lemmas`/`hib_parses` MySQL
    tables that perseus.morph.ParseLoader used to write to via Hibernate."
   (:require [next.jdbc :as jdbc]))

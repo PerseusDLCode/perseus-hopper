@@ -1,8 +1,8 @@
-(ns perseus-morph.corpus-walker
+(ns perseus-morph.walker.core
   "Walks a directory of canonical-{greek,latin}Lit / First1KGreek-style TEI
    XML files, tokenizing each Greek or Latin primary text and feeding the
-   tokens through perseus-morph.frequencies.aggregator -- the corpus walker
-   that aggregator.clj's namespace docstring says doesn't exist yet.
+   tokens through perseus-morph.frequencies.aggregator and
+   perseus-morph.frequencies.document.
 
    Mirrors perseus.morph.MorphCodeAggregator's per-document loop
    (processToken / endDocument), but reads TEI files directly rather than
@@ -13,9 +13,10 @@
   (:require [clojure.java.io :as io]
             [clojure.string]
             [perseus-morph.frequencies.aggregator :as agg]
+            [perseus-morph.frequencies.document :as doc-freq]
             [perseus-morph.language :as lang]
-            [perseus-morph.parses :as parses]
-            [perseus-morph.transcoder :as transcoder])
+            [perseus-morph.transcoder :as transcoder]
+            [perseus-morph.walker.parses :as parses])
   (:import (java.io File)
            (javax.xml.parsers SAXParserFactory)
            (org.xml.sax Attributes InputSource)
@@ -99,58 +100,76 @@
       (.parse sax-parser (InputSource. stream) (tag-text-handler excluded-tags buffer)))
     (re-seq word-pattern (.toString buffer))))
 
+(defn document-id
+  "A surrogate document id for `filename`: the corpus file's own CTS-style
+   basename (e.g. \"tlg0012.tlg001.perseus-grc2\"), used in place of the old
+   Perseus catalog id ('Perseus:text:1999.01.0001') that
+   perseus.document.Query resolved -- those ids are obsolete, and this port
+   has no catalog to resolve them against anyway."
+  [filename]
+  (-> (File. (str filename)) .getName (clojure.string/replace #"\.xml$" "")))
+
 (defn- token->form
   "Normalizes a raw Unicode corpus token into the same comparable string
-   perseus-morph.loader stored as parses.form: Greek tokens go through
+   perseus-morph.loader.core stored as parses.form: Greek tokens go through
    Beta Code (since that's the encoding morph XML --- and so parses.form
    --- uses) before the shared per-language lowercasing."
   [language-code token]
   (lang/normalize-form language-code
-                        (if (= language-code "greek")
-                          (transcoder/unicode->beta-code token)
-                          token)))
+                       (if (= language-code "greek")
+                         (transcoder/unicode->beta-code token)
+                         token)))
 
 (defn process-tokens
-  "Threads `tokens` through the aggregator, mirroring
-   MorphCodeAggregator#processToken: each token's candidate parses (flattened
-   across lemmas, since updateMorphCounts/addPriorCounts don't care which
-   lemma a candidate parse belongs to) update the morph-count map for the
-   token itself and the prior-count (bigram) map against the *previous*
-   token's candidate parses, weighted by the same 1/n as update-morph-counts
-   uses. `lookup` is (fn [token] parses-grouped-by-lemma) -- it owns turning
-   a raw corpus token into the comparable form parses.form was stored in
-   (see token->form) as well as any caching, e.g. cached-lookup wrapping
-   perseus-morph.parses/get-parses, the way MorphCodeAggregator's
-   `cachedParses` did -- so this function only has to know about tokens and
-   their resulting parses, not encodings or the db.
+  "Threads `tokens` through the aggregators, mirroring
+   MorphCodeAggregator#processToken and WordFrequencyLoader#processToken
+   together: each token's candidate parses (flattened across lemmas, since
+   updateMorphCounts/addPriorCounts don't care which lemma a candidate parse
+   belongs to) update the morph-count map for the token itself and the
+   prior-count (bigram) map against the *previous* token's candidate parses,
+   weighted by the same 1/n as update-morph-counts uses; the token's
+   candidate *lemmas* (not yet flattened) separately update the
+   document-count map, weighted 1/(distinct lemma count) the way
+   WordFrequencyLoader's LEMMA strategy does. `lookup` is (fn [token]
+   parses-grouped-by-lemma) -- it owns turning a raw corpus token into the
+   comparable form parses.form was stored in (see token->form) as well as
+   any caching, e.g. cached-lookup wrapping perseus-morph.walker.parses/get-parses,
+   the way MorphCodeAggregator's `cachedParses` did -- so this function only
+   has to know about tokens and their resulting parses, not encodings or the
+   db.
 
-   Returns {:morph-counts ... :prior-counts ...}, ready for
-   aggregator/write-morph-counts! and write-prior-counts!."
-  [language-code lookup tokens]
+   Returns {:morph-counts ... :prior-counts ... :document-counts ...}, ready
+   for aggregator/write-morph-counts!, write-prior-counts!, and
+   perseus-morph.frequencies.document/write-document-counts!."
+  [language-code document-id lookup tokens]
   (:counts
    (reduce
     (fn [{:keys [previous-parses counts]} token]
-      (let [current-parses (mapcat val (lookup token))
+      (let [lemma-groups (lookup token)
+            current-parses (mapcat val lemma-groups)
             n (count current-parses)
-            counts (update counts :morph-counts agg/update-morph-counts language-code current-parses)
+            counts (-> counts
+                       (update :morph-counts agg/update-morph-counts language-code current-parses)
+                       (update :document-counts doc-freq/update-document-counts
+                               language-code document-id lemma-groups))
             counts (if (pos? n)
                      (update counts :prior-counts
                              (fn [prior-counts]
                                (reduce (fn [prior-counts current-parse]
                                          (agg/update-prior-counts prior-counts language-code
-                                                                   previous-parses current-parse
-                                                                   (/ 1.0 n)))
+                                                                  previous-parses current-parse
+                                                                  (/ 1.0 n)))
                                        prior-counts
                                        current-parses)))
                      counts)]
         {:previous-parses current-parses :counts counts}))
-    {:previous-parses nil :counts {:morph-counts {} :prior-counts {}}}
+    {:previous-parses nil :counts {:morph-counts {} :prior-counts {} :document-counts {}}}
     tokens)))
 
 (defn- cached-lookup
   "A (fn [token] parses-grouped-by-lemma) for process-tokens: normalizes
    `token` to its comparable parses.form (see token->form) and wraps
-   perseus-morph.parses/get-parses in a per-document cache, mirroring
+   perseus-morph.walker.parses/get-parses in a per-document cache, mirroring
    MorphCodeAggregator's `cachedParses` map (keyed there by word+languageCode
    string concatenation; a plain map keyed by the form string is equivalent
    since this cache is already scoped to one language per document)."
@@ -166,18 +185,23 @@
 (defn process-file!
   "Processes one corpus file: skips it (returning nil) unless its filename
    says it's a Greek or Latin primary text, otherwise tokenizes it and
-   writes its accumulated morph/prior frequency counts to `db` --
-   mirroring MorphCodeAggregator#endDocument's per-document flush, since
-   each of these corpus files already corresponds to one whole document
-   (no further chunking, the way the original's Chunk model allowed)."
+   writes its accumulated morph/prior/document frequency counts to `db` --
+   mirroring MorphCodeAggregator#endDocument and WordFrequencyLoader#endDocument's
+   per-document flush, since each of these corpus files already corresponds
+   to one whole document (no further chunking, the way the original's Chunk
+   model allowed). The file's own basename stands in for the document id;
+   see document-id."
   [db filename]
   (when-let [language-code (guess-language-code filename)]
     (let [tokens (extract-tokens filename)
-          {:keys [morph-counts prior-counts]}
-          (process-tokens language-code (cached-lookup db language-code) tokens)]
+          doc-id (document-id filename)
+          {:keys [morph-counts prior-counts document-counts]}
+          (process-tokens language-code doc-id (cached-lookup db language-code) tokens)]
       (agg/write-morph-counts! db morph-counts)
       (agg/write-prior-counts! db prior-counts)
-      {:filename (str filename) :language-code language-code :token-count (count tokens)})))
+      (doc-freq/write-document-counts! db document-counts)
+      {:filename (str filename) :language-code language-code
+       :document-id doc-id :token-count (count tokens)})))
 
 (defn walk!
   "Walks `dir` recursively, calling process-file! on every .xml file.
@@ -188,8 +212,8 @@
    malformed file shouldn't lose progress on the rest."
   [db dir & {:keys [log-every] :or {log-every 50}}]
   (let [xml-files (->> (file-seq (io/file dir))
-                        (filter #(.isFile ^File %))
-                        (filter #(clojure.string/ends-with? (.getName ^File %) ".xml")))
+                       (filter #(.isFile ^File %))
+                       (filter #(clojure.string/ends-with? (.getName ^File %) ".xml")))
         files-processed (volatile! 0)
         tokens-processed (volatile! 0)]
     (doseq [file xml-files]
@@ -199,7 +223,7 @@
           (vswap! tokens-processed + token-count)
           (when (zero? (mod @files-processed log-every))
             (println (format "[%5d files, %8d tokens] %s"
-                              @files-processed @tokens-processed (:filename result)))))
+                             @files-processed @tokens-processed (:filename result)))))
         (catch Exception e
           (println "WARN: failed to process" (str file) "-" (.getMessage e)))))
     {:files-processed @files-processed :tokens-processed @tokens-processed}))

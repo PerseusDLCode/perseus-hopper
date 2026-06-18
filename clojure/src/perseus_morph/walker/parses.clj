@@ -1,7 +1,7 @@
-(ns perseus-morph.parses
+(ns perseus-morph.walker.parses
   "Parse lookup by surface form, replacing perseus.morph.Parse.getParses
-   (word, languageCode). Used by the frequency aggregator (and, later, the
-   corpus walker) to find every candidate parse of a token."
+   (word, languageCode). Used by perseus-morph.walker to find every
+   candidate parse of a token."
   (:require [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]))
 

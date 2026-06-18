@@ -1,12 +1,12 @@
-(ns perseus-morph.core
+(ns perseus-morph.loader.load
   "CLI entry point, mirroring perseus.morph.ParseLoader's main(): loads a
    morph XML file (greek.morph.xml, latin.morph.xml, ...) into a SQLite
    database, guessing the language from the filename unless overridden."
   (:require [clojure.string]
             [clojure.tools.cli :as cli]
             [next.jdbc :as jdbc]
-            [perseus-morph.loader :as loader]
-            [perseus-morph.schema :as schema])
+            [perseus-morph.loader.core :as loader]
+            [perseus-morph.loader.schema :as schema])
   (:gen-class))
 
 (def cli-options
@@ -27,7 +27,7 @@
           (System/exit 1))
 
       (not= (count arguments) 1)
-      (do (println "Usage: clj -M -m perseus-morph.core [options] <morph XML file>")
+      (do (println "Usage: clj -M -m perseus-morph.loader.load [options] <morph XML file>")
           (println summary)
           (System/exit 1))
 

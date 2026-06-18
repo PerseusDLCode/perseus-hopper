@@ -1,10 +1,11 @@
 (ns perseus-morph.features
   "Shared definitions for the morphological feature columns that appear on
-   `parses` rows (see perseus-morph.schema), used both by the morph-XML
+   `parses` rows (see perseus-morph.loader.schema), used both by the morph-XML
    loader (to compute `dedup_key`) and by the frequency aggregator (to
    compute the equivalent `feature_key` on morph_frequencies/prior_frequencies).
    Mirrors the feature set perseus.morph.MorphCode used to pack into a
-   single morph_code string per language.")
+   single morph_code string per language."
+  (:require [clojure.string]))
 
 (def feature-tag->column
   "Map of <feature-tag> -> parses column name, for every tag that can

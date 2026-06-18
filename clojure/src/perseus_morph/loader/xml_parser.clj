@@ -1,4 +1,4 @@
-(ns perseus-morph.xml-parser
+(ns perseus-morph.loader.xml-parser
   "Streaming SAX parser for the greek.morph.xml / latin.morph.xml format,
    ported from perseus.morph.ParseLoader$ParseHandler. Calls `on-analysis`
    once per <analysis> element with a map of {feature-name value}, where

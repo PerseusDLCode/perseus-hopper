@@ -27,8 +27,8 @@ database instead of MySQL (via Hibernate).
 ## Usage
 
 ```sh
-clj -M -m perseus-morph.core ../xml/data/greek.morph.xml
-clj -M -m perseus-morph.core ../xml/data/latin.morph.xml
+clj -M:load ../xml/data/greek.morph.xml
+clj -M:load ../xml/data/latin.morph.xml
 ```
 
 By default this writes to `./morph.db` and deletes any existing rows for the
@@ -50,13 +50,23 @@ files to populate `morph_frequencies` and `prior_frequencies`
 `perseus.morph.MorphCodeAggregator`:
 
 ```sh
-clj -M -m perseus-morph.aggregate ../corpora
+clj -M:aggregate ../corpora
 ```
 
-By default this writes to `./morph.db`, same as `perseus-morph.core`. Files
+By default this writes to `./morph.db`, same as `perseus-morph.loader.load`. Files
 that don't look like a Greek or Latin primary text (translations,
 `__cts__.xml` metadata, ...) are skipped; see
-`perseus-morph.corpus-walker/guess-language-code`. Options:
+`perseus-morph.walker/guess-language-code`.
+
+Each file's own CTS-style basename (e.g. `tlg0012.tlg001.perseus-grc2`)
+stands in for a document id in `document_frequencies` (see
+`perseus-morph.walker/document-id`), which tracks how often each
+candidate lemma occurs *within that document specifically* -- the old
+Perseus catalog ids (`Perseus:text:1999.01.0001`) that
+`perseus.document.Query` resolved are obsolete, and this port has no
+catalog to resolve them against in any case.
+
+Options:
 
 ```
 -d, --db PATH  Path to the SQLite database file (default: morph.db)
