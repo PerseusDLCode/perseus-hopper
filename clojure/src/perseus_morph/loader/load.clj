@@ -4,9 +4,9 @@
    database, guessing the language from the filename unless overridden."
   (:require [clojure.string]
             [clojure.tools.cli :as cli]
-            [next.jdbc :as jdbc]
             [perseus-morph.loader.core :as loader]
-            [perseus-morph.loader.schema :as schema])
+            [perseus-morph.loader.schema :as schema]
+            [perseus-morph.sqlite :as sqlite])
   (:gen-class))
 
 (def cli-options
@@ -34,7 +34,7 @@
       :else
       (let [filename (first arguments)
             language-code (or (:language options) (loader/guess-language-code filename))
-            db (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
+            db (sqlite/datasource (:db options))]
         (schema/init-db! db)
         (when-not (:no-delete options)
           (println "Deleting existing parses for" language-code)

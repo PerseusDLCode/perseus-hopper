@@ -9,6 +9,7 @@
             [next.jdbc :as jdbc]
             [perseus-morph.frequencies.document :as doc-schema]
             [perseus-morph.frequencies.schema :as freq-schema]
+            [perseus-morph.sqlite :as sqlite]
             [perseus-morph.walker.core :as walker])
   (:gen-class))
 
@@ -34,7 +35,7 @@
 
       :else
       (let [dir (first arguments)
-            ds (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
+            ds (sqlite/datasource (:db options))]
         (with-open [db (jdbc/get-connection ds)]
           ;; A single connection, held open for the whole walk, with WAL +
           ;; relaxed synchronous: the default (one implicit autocommit

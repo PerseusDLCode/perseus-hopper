@@ -23,10 +23,12 @@
 
 (defn guess-language-code
   "Mirrors ParseLoader.main()'s filename-based language guess: the language
-   code is the text before the first '.' in the filename, e.g.
-   \"greek.morph.xml\" -> \"greek\"."
+   code is the text before the first '.' in the filename (e.g.
+   \"greek.morph.xml\" -> \"greek\"), canonicalized to its ISO 639 code
+   (e.g. \"grc\")."
   [filename]
-  (-> (File. (str filename)) .getName (clojure.string/split #"\.") first))
+  (-> (File. (str filename)) .getName (clojure.string/split #"\.") first
+      lang/canonicalize-code))
 
 (defn- get-or-create-lemma!
   "Returns the id of the lemma matching [headword sequence-number
@@ -37,7 +39,7 @@
   (let [cache-key [headword sequence-number language-code]]
     (or (.get ^java.util.HashMap cache cache-key)
         (let [bare-headword (lang/bare-form headword)
-              headword-unicode (when (= language-code "greek")
+              headword-unicode (when (= language-code "grc")
                                  (transcoder/beta-code->unicode headword))]
           (jdbc/execute! db
                          ["INSERT OR IGNORE INTO lemmas
@@ -70,9 +72,9 @@
             ;; `form`/`expanded-form`, which have already been lowercased
             ;; for matching) so capitalization/breathing/accent markers
             ;; convert faithfully. Only Greek is encoded in Beta Code here.
-            form-unicode (when (= language-code "greek")
+            form-unicode (when (= language-code "grc")
                            (transcoder/beta-code->unicode form-raw))
-            expanded-form-unicode (when (= language-code "greek")
+            expanded-form-unicode (when (= language-code "grc")
                                     (transcoder/beta-code->unicode
                                      (or (get analysis "orth") form-raw)))
             features (reduce-kv
@@ -83,7 +85,6 @@
                       {}
                       feature-columns)
             row (merge {:lemma_id lemma-id
-                        :language_code language-code
                         :form form
                         :form_unicode form-unicode
                         :expanded_form expanded-form
@@ -102,15 +103,14 @@
                          (vals row)))))
 
 (defn delete-by-language!
-  "Deletes all parses (and now-orphaned lemmas) for `language-code`, mirroring
-   ParseLoader's --delete-existing default behavior."
+  "Deletes all lemmas for `language-code` (and, via their lemma_id's
+   ON DELETE CASCADE, their now-orphaned parses and document_frequencies
+   rows), mirroring ParseLoader's --delete-existing default behavior.
+   Requires `db` to have foreign key enforcement on (see
+   perseus-morph.sqlite/datasource), since SQLite ignores ON DELETE clauses
+   when foreign key enforcement is off."
   [db language-code]
-  (jdbc/execute! db
-                 ["DELETE FROM parses WHERE language_code = ?" language-code])
-  (jdbc/execute! db
-                 ["DELETE FROM lemmas WHERE language_code = ?
-        AND id NOT IN (SELECT DISTINCT lemma_id FROM parses)"
-                  language-code]))
+  (jdbc/execute! db ["DELETE FROM lemmas WHERE language_code = ?" language-code]))
 
 (defn load!
   "Streams `filename`'s <analysis> elements, inserting a lemma (if needed)

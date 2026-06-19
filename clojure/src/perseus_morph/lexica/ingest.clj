@@ -10,9 +10,9 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
-            [next.jdbc :as jdbc]
             [perseus-morph.lexica.core :as lexica]
-            [perseus-morph.lexica.schema :as schema])
+            [perseus-morph.lexica.schema :as schema]
+            [perseus-morph.sqlite :as sqlite])
   (:gen-class))
 
 (def cli-options
@@ -49,7 +49,7 @@
 
       :else
       (let [[lexicon-id filename] arguments
-            db (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
+            db (sqlite/datasource (:db options))]
         (schema/init-db! db)
         (when-not (:no-delete options)
           (println "Deleting existing senses for" lexicon-id)

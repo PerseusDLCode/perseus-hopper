@@ -9,7 +9,8 @@
    `parses` needs `dedup_key`: SQLite's UNIQUE treats NULL <> NULL."
   (:require [clojure.string]
             [next.jdbc :as jdbc]
-            [perseus-morph.features :as features]))
+            [perseus-morph.features :as features]
+            [perseus-morph.languages.schema :as languages]))
 
 (defn- column-defs
   "SQL column definitions for the feature columns, optionally prefixed
@@ -21,7 +22,7 @@
 
 (def ddl
   [(str "CREATE TABLE IF NOT EXISTS morph_frequencies (
-      language_code TEXT NOT NULL,
+      language_code TEXT NOT NULL REFERENCES languages (code),
       " (column-defs nil) ",
       feature_key TEXT NOT NULL,
       count REAL NOT NULL DEFAULT 0,
@@ -30,7 +31,7 @@
    "CREATE INDEX IF NOT EXISTS idx_morph_frequencies_language
       ON morph_frequencies (language_code)"
    (str "CREATE TABLE IF NOT EXISTS prior_frequencies (
-      language_code TEXT NOT NULL,
+      language_code TEXT NOT NULL REFERENCES languages (code),
       " (column-defs "previous") ",
       previous_feature_key TEXT NOT NULL,
       " (column-defs "current") ",
@@ -42,9 +43,11 @@
       ON prior_frequencies (language_code)"])
 
 (defn init-db!
-  "Creates the morph_frequencies/prior_frequencies tables (and their
-   indexes) if they don't already exist. Additive: does not touch the
-   lemmas/parses tables from perseus-morph.loader.schema."
+  "Creates the languages table (these tables' language_code references it)
+   and the morph_frequencies/prior_frequencies tables (and their indexes) if
+   they don't already exist. Additive: does not touch the lemmas/parses
+   tables from perseus-morph.loader.schema."
   [db]
+  (languages/init-db! db)
   (doseq [stmt ddl]
     (jdbc/execute! db [stmt])))

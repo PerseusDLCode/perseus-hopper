@@ -3,12 +3,13 @@
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
             [perseus-morph.lexica.core :as lexica]
-            [perseus-morph.lexica.schema :as schema]))
+            [perseus-morph.lexica.schema :as schema]
+            [perseus-morph.sqlite :as sqlite]))
 
 (defn- temp-db []
   (let [file (java.io.File/createTempFile "lexica-core-test" ".db")]
     (.deleteOnExit file)
-    (let [db (jdbc/get-datasource (str "jdbc:sqlite:" (.getAbsolutePath file)))]
+    (let [db (sqlite/datasource (.getAbsolutePath file))]
       (schema/init-db! db)
       db)))
 

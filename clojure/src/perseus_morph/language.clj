@@ -22,18 +22,19 @@
   (-> s uncapitalize (clojure.string/replace "*" "")))
 
 (defmulti to-lowercase
-  "Lowercases `s` according to the conventions of `language-code`, mirroring
-   each LanguageAdapter's toLowerCase()."
+  "Lowercases `s` according to the conventions of `language-code` (an ISO
+   639 code, e.g. \"grc\"/\"lat\"/\"ara\"), mirroring each LanguageAdapter's
+   toLowerCase()."
   (fn [language-code _s] language-code))
 
-(defmethod to-lowercase "greek" [_ s] (greek-lowercase s))
+(defmethod to-lowercase "grc" [_ s] (greek-lowercase s))
 (defmethod to-lowercase :default [_ s] (clojure.string/lower-case s))
 
 (defn match-case?
   "True if `language-code` is case-sensitive when matching forms. Mirrors
    LanguageAdapter#matchCase(); only Arabic overrides the default (false)."
   [language-code]
-  (= language-code "arabic"))
+  (= language-code "ara"))
 
 (defn normalize-form
   "Equivalent of:
@@ -42,6 +43,19 @@
   (if (match-case? language-code)
     form
     (to-lowercase language-code form)))
+
+(def language-name->code
+  "Maps the English language names used by morph XML filenames
+   (greek.morph.xml, latin.morph.xml, arabic.morph.xml) to the ISO 639
+   codes used everywhere internally."
+  {"greek" "grc" "latin" "lat" "arabic" "ara"})
+
+(defn canonicalize-code
+  "Maps `code` to its ISO 639 form via language-name->code, or returns it
+   unchanged if it isn't a known English name (i.e. it's already an ISO
+   code)."
+  [code]
+  (get language-name->code code code))
 
 (def ^:private lemma-pattern #"^(\D+)(\d+)$")
 (def ^:private hyphen-pattern #"^.+-(.+)$")

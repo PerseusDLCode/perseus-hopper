@@ -10,17 +10,17 @@
 
 (deftest greek-lowercase-test
   (testing "uncapitalizes and strips '*' the way GreekAdapter#toLowerCase does"
-    (is (= ")enuw/" (lang/to-lowercase "greek" "*)enuw/")))
-    (is (= "h" (lang/to-lowercase "greek" "h")))))
+    (is (= ")enuw/" (lang/to-lowercase "grc" "*)enuw/")))
+    (is (= "h" (lang/to-lowercase "grc" "h")))))
 
 (deftest latin-lowercase-test
   (testing "falls through to the default (plain) lowercase"
-    (is (= "abeuntibus" (lang/to-lowercase "latin" "ABEUNTIBUS")))))
+    (is (= "abeuntibus" (lang/to-lowercase "lat" "ABEUNTIBUS")))))
 
 (deftest match-case-test
-  (is (false? (lang/match-case? "greek")))
-  (is (false? (lang/match-case? "latin")))
-  (is (true? (lang/match-case? "arabic"))))
+  (is (false? (lang/match-case? "grc")))
+  (is (false? (lang/match-case? "lat")))
+  (is (true? (lang/match-case? "ara"))))
 
 (deftest parse-lemma-text-test
   (testing "plain headword, no sequence number"

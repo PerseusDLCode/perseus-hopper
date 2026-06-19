@@ -49,19 +49,22 @@
    text file consistently carries its language in the filename."
   #"-([a-z]{2,3})\d*\.xml$")
 
-(def ^:private filename-language-code->language-code
-  {"grc" "greek" "lat" "latin"})
+(def ^:private known-language-codes
+  "The ISO 639 codes guess-language-code recognizes from a corpus
+   filename; anything else (translations' \"eng\", multi-language
+   editions' \"mul\", ...) is treated as not Greek or Latin."
+  #{"grc" "lat"})
 
 (defn guess-language-code
-  "The language code implied by `filename`'s CTS naming convention (see
-   filename-language-pattern), or nil if it doesn't look like a Greek or
-   Latin primary text at all (translations, apparatus-only files,
+  "The ISO 639 language code implied by `filename`'s CTS naming convention
+   (see filename-language-pattern), or nil if it doesn't look like a Greek
+   or Latin primary text at all (translations, apparatus-only files,
    __cts__.xml metadata, multi-language 'mul' editions, ...) -- the signal
    this namespace uses to skip non-Greek/Latin files without even opening
    them."
   [filename]
   (when-let [[_ code] (re-find filename-language-pattern (str filename))]
-    (get filename-language-code->language-code code)))
+    (known-language-codes code)))
 
 (defn- tag-text-handler
   "A SAX handler that appends every bit of character data outside
@@ -122,7 +125,7 @@
    --- uses) before the shared per-language lowercasing."
   [language-code token]
   (lang/normalize-form language-code
-                       (if (= language-code "greek")
+                       (if (= language-code "grc")
                          (transcoder/unicode->beta-code token)
                          token)))
 
@@ -134,8 +137,8 @@
    belongs to) update the morph-count map for the token itself and the
    prior-count (bigram) map against the *previous* token's candidate parses,
    weighted by the same 1/n as update-morph-counts uses; the token's
-   candidate *lemmas* (not yet flattened) separately update the
-   document-count map, weighted 1/(distinct lemma count) the way
+   candidate *lemmas* (not yet flattened, and identified by lemma_id) separately
+   update the document-count map, weighted 1/(distinct lemma count) the way
    WordFrequencyLoader's LEMMA strategy does. `lookup` is (fn [token]
    parses-grouped-by-lemma) -- it owns turning a raw corpus token into the
    comparable form parses.form was stored in (see token->form) as well as
@@ -157,7 +160,7 @@
             counts (-> counts
                        (update :morph-counts agg/update-morph-counts language-code current-parses)
                        (update :document-counts doc-freq/update-document-counts
-                               language-code document-id lemma-groups))
+                               document-id lemma-groups))
             counts (if (pos? n)
                      (update counts :prior-counts
                              (fn [prior-counts]

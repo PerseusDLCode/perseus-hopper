@@ -73,6 +73,15 @@ Options:
 -h, --help
 ```
 
+## Lexicon ingestion
+
+To ingest a lexicon, use the `ingest` alias. For example, to ingest
+_LSJ_ (under the key `"lsj"`), run:
+
+```
+clj -M:ingest lsj /path/to/LSJ
+```
+
 ## Tests
 
 ```sh

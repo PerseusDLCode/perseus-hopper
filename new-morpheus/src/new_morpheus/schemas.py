@@ -25,10 +25,20 @@ class ParseOut(BaseModel):
     possessive: str | None
 
 
+class SenseOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    document_id: str
+    sense: str | None
+    level: int | None
+    short_definition: str | None
+
+
 class LemmaResult(BaseModel):
     headword: str
     sequence_number: int
     parses: list[ParseOut]
+    senses: list[SenseOut] = []
     document_frequency: float | None = None
 
 

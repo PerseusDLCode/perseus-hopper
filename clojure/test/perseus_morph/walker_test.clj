@@ -6,13 +6,14 @@
             [perseus-morph.frequencies.document :as doc-freq]
             [perseus-morph.frequencies.schema :as freq-schema]
             [perseus-morph.loader.schema :as schema]
+            [perseus-morph.sqlite :as sqlite]
   [perseus-morph.walker.core :as walker]))
 
 (deftest guess-language-code-test
   (testing "canonical-greekLit/canonical-latinLit/First1KGreek filenames"
-    (is (= "greek" (walker/guess-language-code "tlg0012.tlg001.perseus-grc2.xml")))
-    (is (= "latin" (walker/guess-language-code "phi0119.phi017.perseus-lat2.xml")))
-    (is (= "greek" (walker/guess-language-code "tlg0639.tlg001.1st1K-grc1.xml"))))
+    (is (= "grc" (walker/guess-language-code "tlg0012.tlg001.perseus-grc2.xml")))
+    (is (= "lat" (walker/guess-language-code "phi0119.phi017.perseus-lat2.xml")))
+    (is (= "grc" (walker/guess-language-code "tlg0639.tlg001.1st1K-grc1.xml"))))
 
   (testing "non-Greek/Latin and non-text files are nil"
     (is (nil? (walker/guess-language-code "tlg0012.tlg001.perseus-eng3.xml")))
@@ -68,31 +69,31 @@
             tokens, and document counts accumulate per candidate lemma"
     (let [noun {:part_of_speech "noun"}
           verb {:part_of_speech "verb"}
-          lookup {"noun-word" {[:lemma-a -1] [noun]}
-                  "verb-word" {[:lemma-b -1] [verb]}}
+          lookup {"noun-word" {1 [noun]}
+                  "verb-word" {2 [verb]}}
           {:keys [morph-counts prior-counts document-counts]}
- (walker/process-tokens "greek" "doc-a" lookup ["noun-word" "verb-word"])]
-      (is (= 1.0 (get morph-counts ["greek" noun])))
-      (is (= 1.0 (get morph-counts ["greek" verb])))
-      (is (= 2.0 (get morph-counts ["greek" {}])))
-      (is (= 1.0 (get prior-counts ["greek" noun verb])))
-  (is (= 1.0 (get document-counts ["greek" "doc-a" :lemma-a -1])))
-  (is (= 1.0 (get document-counts ["greek" "doc-a" :lemma-b -1])))))
+ (walker/process-tokens "grc" "doc-a" lookup ["noun-word" "verb-word"])]
+      (is (= 1.0 (get morph-counts ["grc" noun])))
+      (is (= 1.0 (get morph-counts ["grc" verb])))
+      (is (= 2.0 (get morph-counts ["grc" {}])))
+      (is (= 1.0 (get prior-counts ["grc" noun verb])))
+  (is (= 1.0 (get document-counts ["doc-a" 1])))
+  (is (= 1.0 (get document-counts ["doc-a" 2])))))
 
   (testing "a token absent from the dictionary contributes no morph or document
             counts and breaks the bigram chain"
     (let [noun {:part_of_speech "noun"}
-          lookup {"noun-word" {[:lemma-a -1] [noun]} "unknown" {}}
+          lookup {"noun-word" {1 [noun]} "unknown" {}}
           {:keys [morph-counts prior-counts document-counts]}
- (walker/process-tokens "greek" "doc-a" lookup ["noun-word" "unknown" "noun-word"])]
-      (is (= 2.0 (get morph-counts ["greek" noun])))
+ (walker/process-tokens "grc" "doc-a" lookup ["noun-word" "unknown" "noun-word"])]
+      (is (= 2.0 (get morph-counts ["grc" noun])))
       (is (empty? prior-counts))
-   (is (= 2.0 (get document-counts ["greek" "doc-a" :lemma-a -1]))))))
+   (is (= 2.0 (get document-counts ["doc-a" 1]))))))
 
 (defn- temp-db []
   (let [file (java.io.File/createTempFile "corpus-walker-test" ".db")]
     (.deleteOnExit file)
-    (let [db (jdbc/get-datasource (str "jdbc:sqlite:" (.getAbsolutePath file)))]
+    (let [db (sqlite/datasource (.getAbsolutePath file))]
       (schema/init-db! db)
       (freq-schema/init-db! db)
       (doc-freq/init-db! db)
@@ -102,9 +103,9 @@
   (jdbc/execute! db ["INSERT INTO lemmas (headword, sequence_number, language_code)
                       VALUES (?, -1, ?)" headword language-code])
   (let [lemma-id (:lemmas/id (jdbc/execute-one! db ["SELECT id FROM lemmas WHERE headword = ?" headword]))]
-    (jdbc/execute! db ["INSERT INTO parses (lemma_id, language_code, form, part_of_speech, dedup_key)
-                        VALUES (?, ?, ?, ?, ?)"
-                        lemma-id language-code form part-of-speech part-of-speech])))
+    (jdbc/execute! db ["INSERT INTO parses (lemma_id, form, part_of_speech, dedup_key)
+                        VALUES (?, ?, ?, ?)"
+                        lemma-id form part-of-speech part-of-speech])))
 
 (deftest process-file!-test
   (testing "an end-to-end Greek file: tokenize, look up parses, write counts"
@@ -121,10 +122,10 @@
       ;; "mh=nin" / "a)/eide" are μῆνιν/ἄειδε's Beta Code forms, the same
       ;; normalization perseus-morph.loader.core would have stored for these
       ;; words' analyses.
-      (insert-parse! db {:headword "mh=nis" :language-code "greek" :form "mh=nin" :part-of-speech "noun"})
-      (insert-parse! db {:headword "a)ei/dw" :language-code "greek" :form "a)/eide" :part-of-speech "verb"})
+      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :part-of-speech "noun"})
+      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :part-of-speech "verb"})
       (let [result (walker/process-file! db renamed)]
-        (is (= "greek" (:language-code result)))
+        (is (= "grc" (:language-code result)))
         (is (= 2 (:token-count result)))
         (is (= "tlg0012.tlg001.perseus-grc2" (:document-id result)))
         (is (= 1.0 (:count (jdbc/execute-one! db ["SELECT count FROM morph_frequencies
@@ -135,9 +136,10 @@
                                                       AND current_part_of_speech = 'verb'"]
                                                {:builder-fn rs/as-unqualified-maps}))))
 (is (= 1.0 (:weighted_frequency
-            (jdbc/execute-one! db ["SELECT weighted_frequency FROM document_frequencies
-                                             WHERE headword = 'mh=nis'
-                                               AND document_id = 'tlg0012.tlg001.perseus-grc2'"]
+            (jdbc/execute-one! db ["SELECT df.weighted_frequency FROM document_frequencies df
+                                      JOIN lemmas l ON df.lemma_id = l.id
+                                     WHERE l.headword = 'mh=nis'
+                                       AND df.document_id = 'tlg0012.tlg001.perseus-grc2'"]
                                        {:builder-fn rs/as-unqualified-maps})))))))
 
   (testing "a non-Greek/Latin file (by filename) is skipped without writing anything"

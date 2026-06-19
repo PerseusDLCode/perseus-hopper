@@ -17,7 +17,8 @@ class Parse(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     lemma_id: int = Field(foreign_key="lemmas.id")
-    language_code: str
+    # No language_code column: it's a transitive duplicate of lemma_id ->
+    # Lemma.language_code (see clojure/src/perseus_morph/loader/schema.clj).
     form: str
     form_unicode: str | None = None
     expanded_form: str | None = None
@@ -41,11 +42,27 @@ class Parse(SQLModel, table=True):
     dedup_key: str
 
 
+class Sense(SQLModel, table=True):
+    __tablename__ = "senses"
+
+    id: int | None = Field(default=None, primary_key=True)
+    entry_id: int = -1
+    sense_id: int = -1
+    document_id: str
+    # Despite the name, this holds "entry=" + the lexicon entry's `key`
+    # attribute, not a headword. See clojure/src/perseus_morph/lexica/schema.clj.
+    lemma: str
+    sense: str | None = None
+    level: int | None = None
+    short_definition: str | None = None
+
+
 class DocumentFrequency(SQLModel, table=True):
     __tablename__ = "document_frequencies"
 
-    language_code: str = Field(primary_key=True)
     document_id: str = Field(primary_key=True)
-    headword: str = Field(primary_key=True)
-    sequence_number: int = Field(default=-1, primary_key=True)
+    # No headword/sequence_number/language_code columns: that's the lemma's
+    # natural key, already captured by lemma_id (see
+    # clojure/src/perseus_morph/frequencies/document.clj).
+    lemma_id: int = Field(foreign_key="lemmas.id", primary_key=True)
     weighted_frequency: float = 0

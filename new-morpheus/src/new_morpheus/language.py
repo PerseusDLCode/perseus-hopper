@@ -16,13 +16,13 @@ def _greek_lowercase(s: str) -> str:
 
 
 def to_lowercase(language_code: str, s: str) -> str:
-    if language_code == "greek":
+    if language_code == "grc":
         return _greek_lowercase(s)
     return s.lower()
 
 
 def match_case(language_code: str) -> bool:
-    return language_code == "arabic"
+    return language_code == "ara"
 
 
 def normalize_form(language_code: str, form: str) -> str:
