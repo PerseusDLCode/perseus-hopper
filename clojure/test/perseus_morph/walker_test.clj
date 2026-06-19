@@ -95,13 +95,13 @@
       (migrations/migrate! db)
       db)))
 
-(defn- insert-parse! [db {:keys [headword language-code form part-of-speech]}]
+(defn- insert-parse! [db {:keys [headword language-code form form-unicode part-of-speech]}]
   (jdbc/execute! db ["INSERT INTO lemmas (headword, sequence_number, language_code)
                       VALUES (?, -1, ?)" headword language-code])
   (let [lemma-id (:lemmas/id (jdbc/execute-one! db ["SELECT id FROM lemmas WHERE headword = ?" headword]))]
-    (jdbc/execute! db ["INSERT INTO parses (lemma_id, form, part_of_speech, dedup_key)
-                        VALUES (?, ?, ?, ?)"
-                        lemma-id form part-of-speech part-of-speech])))
+    (jdbc/execute! db ["INSERT INTO parses (lemma_id, form, form_unicode, part_of_speech, dedup_key)
+                        VALUES (?, ?, ?, ?, ?)"
+                        lemma-id form form-unicode part-of-speech part-of-speech])))
 
 (deftest process-file!-test
   (testing "an end-to-end Greek file: tokenize, look up parses, write counts"
@@ -115,11 +115,12 @@
           renamed (io/file (.getParent file) "tlg0012.tlg001.perseus-grc2.xml")]
       (.renameTo file renamed)
       (.deleteOnExit renamed)
-      ;; "mh=nin" / "a)/eide" are μῆνιν/ἄειδε's Beta Code forms, the same
-      ;; normalization perseus-morph.loader.core would have stored for these
-      ;; words' analyses.
-      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :part-of-speech "noun"})
-      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :part-of-speech "verb"})
+      ;; "mh=nin" / "a)/eide" are μῆνιν/ἄειδε's Beta Code forms (still what
+      ;; morph.xml itself, and so `form`, is encoded in); form_unicode is
+      ;; the Unicode perseus-morph.loader.core would have derived from them,
+      ;; and what perseus-morph.walker.core now matches corpus tokens against.
+      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :form-unicode "μῆνιν" :part-of-speech "noun"})
+      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :form-unicode "ἄειδε" :part-of-speech "verb"})
       (let [result (walker/process-file! db renamed (java.util.HashMap.))]
         (is (= "grc" (:language-code result)))
         (is (= 2 (:token-count result)))
@@ -155,8 +156,8 @@
       (.delete dir)
       (.mkdir dir)
       (.deleteOnExit dir)
-      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :part-of-speech "noun"})
-      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :part-of-speech "verb"})
+      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :form-unicode "μῆνιν" :part-of-speech "noun"})
+      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :form-unicode "ἄειδε" :part-of-speech "verb"})
       (let [file-1 (io/file dir "tlg0012.tlg001.perseus-grc2.xml")
             file-2 (io/file dir "tlg0012.tlg002.perseus-grc1.xml")]
         (spit file-1 "<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">

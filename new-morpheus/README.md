@@ -62,7 +62,7 @@ the API has no notion of "line 1.1" beyond it being a word in that document:
 
 ```sh
 curl -G "http://127.0.0.1:8000/morph" \
-  --data-urlencode "word=mh=nin" \
+  --data-urlencode "word=μῆνιν" \
   --data-urlencode "language=grc" \
   --data-urlencode "document_id=tlg0012.tlg001.perseus-grc2"
 ```

@@ -21,7 +21,6 @@
             [perseus-morph.frequencies.aggregator :as agg]
             [perseus-morph.frequencies.document :as doc-freq]
             [perseus-morph.language :as lang]
-            [perseus-morph.transcoder :as transcoder]
             [perseus-morph.walker.parses :as parses])
   (:import (java.io File)
            (javax.xml.parsers SAXParserFactory)
@@ -120,14 +119,17 @@
 
 (defn- token->form
   "Normalizes a raw Unicode corpus token into the same comparable string
-   perseus-morph.loader.core stored as parses.form: Greek tokens go through
-   Beta Code (since that's the encoding morph XML --- and so parses.form
-   --- uses) before the shared per-language lowercasing."
+   perseus-morph.loader.core stored as parses.form_unicode: per-language
+   lowercasing only (lang/normalize-form's greek-lowercase, for Greek, just
+   uncapitalizes a token's initial letter -- the only capitalization
+   morph.xml's own Beta Code source ever marks, via a leading '*' -- so a
+   corpus token's accidental sentence-initial capital still matches a
+   lowercase dictionary form, while a capitalized form like a proper noun's
+   matches as-is). No Beta Code conversion happens here -- morph.xml is the
+   only thing still in Beta Code; both this corpus token and parses.form_unicode
+   are genuine Unicode."
   [language-code token]
-  (lang/normalize-form language-code
-                       (if (= language-code "grc")
-                         (transcoder/unicode->beta-code token)
-                         token)))
+  (lang/normalize-form language-code token))
 
 (defn process-tokens
   "Threads `tokens` through the aggregators, mirroring
@@ -141,7 +143,7 @@
    update the document-count map, weighted 1/(distinct lemma count) the way
    WordFrequencyLoader's LEMMA strategy does. `lookup` is (fn [token]
    parses-grouped-by-lemma) -- it owns turning a raw corpus token into the
-   comparable form parses.form was stored in (see token->form) as well as
+   comparable form parses.form_unicode was stored in (see token->form) as well as
    any caching, e.g. cached-lookup wrapping perseus-morph.walker.parses/get-parses,
    the way MorphCodeAggregator's `cachedParses` did -- so this function only
    has to know about tokens and their resulting parses, not encodings or the
@@ -177,7 +179,7 @@
 
 (defn- cached-lookup
   "A (fn [token] parses-grouped-by-lemma) for process-tokens: normalizes
-   `token` to its comparable parses.form (see token->form) and wraps
+   `token` to its comparable parses.form_unicode (see token->form) and wraps
    perseus-morph.walker.parses/get-parses in `cache`, mirroring
    MorphCodeAggregator's `cachedParses` map (keyed there by word+languageCode
    string concatenation -- a [language-code form] vector key is equivalent).

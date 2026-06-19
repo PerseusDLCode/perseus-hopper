@@ -1,5 +1,6 @@
 import os
 
+import beta_code
 import uvicorn
 from fastapi import Depends, FastAPI
 from sqlmodel import Session
@@ -31,7 +32,9 @@ def morph(
     grouped = lookup_parses(session, word, language)
 
     document_frequencies = {
-        key: document_frequency(session, language, document_id, *key) if document_id else None
+        key: document_frequency(session, language, document_id, *key)
+        if document_id
+        else None
         for key in grouped
     }
     prior_grouped = lookup_parses(session, prior_word, language) if prior_word else {}
@@ -42,9 +45,15 @@ def morph(
         prior_frequency_scores(session, language, grouped, prior_grouped),
     )
 
+    # FIXME: We're using Giuseppe Celano's Unicode LSJ, so we need
+    # to look up senses and entries—but not document_frequency—
+    # with the Unicode form of the headword. We should fix this
+    # by standardizing on Unicode everywhere.
     lemmas = [
         LemmaResult(
-            headword=headword,
+            headword=beta_code.beta_code_to_greek(headword)
+            if language == "grc"
+            else headword,
             sequence_number=sequence_number,
             parses=[
                 ParseOut.model_validate(parse).model_copy(
@@ -54,11 +63,25 @@ def morph(
             ],
             senses=[
                 SenseOut.model_validate(sense)
-                for sense in lookup_senses(session, language, headword, sequence_number)
+                for sense in lookup_senses(
+                    session,
+                    language,
+                    beta_code.beta_code_to_greek(headword)
+                    if language == "grc"
+                    else headword,
+                    sequence_number,
+                )
             ],
             entries=[
                 EntryOut.model_validate(entry)
-                for entry in lookup_entries(session, language, headword, sequence_number)
+                for entry in lookup_entries(
+                    session,
+                    language,
+                    beta_code.beta_code_to_greek(headword)
+                    if language == "grc"
+                    else headword,
+                    sequence_number,
+                )
             ],
             document_frequency=document_frequencies[(headword, sequence_number)],
         )
@@ -70,7 +93,12 @@ def morph(
 
 def dev() -> None:
     """Entry point for `uv run new-morpheus-dev`: autoreloading local server."""
-    uvicorn.run("new_morpheus.main:app", host="127.0.0.1", port=int(os.environ.get("PORT", 8000)), reload=True)
+    uvicorn.run(
+        "new_morpheus.main:app",
+        host="127.0.0.1",
+        port=int(os.environ.get("PORT", 8000)),
+        reload=True,
+    )
 
 
 def serve() -> None:
