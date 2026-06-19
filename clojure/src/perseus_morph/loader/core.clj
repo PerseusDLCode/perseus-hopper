@@ -40,14 +40,16 @@
     (or (.get ^java.util.HashMap cache cache-key)
         (let [bare-headword (lang/bare-form headword)
               headword-unicode (when (= language-code "grc")
-                                 (transcoder/beta-code->unicode headword))]
+                                 (transcoder/beta-code->unicode headword))
+              headword-normalized (lang/normalize-unicode
+                                    (or headword-unicode headword))]
           (jdbc/execute! db
                          ["INSERT OR IGNORE INTO lemmas
-                (headword, headword_unicode, bare_headword, sequence_number,
-                 language_code)
-              VALUES (?, ?, ?, ?, ?)"
-                          headword headword-unicode bare-headword
-                          sequence-number language-code])
+                (headword, headword_unicode, headword_normalized,
+                 bare_headword, sequence_number, language_code)
+              VALUES (?, ?, ?, ?, ?, ?)"
+                          headword headword-unicode headword-normalized
+                          bare-headword sequence-number language-code])
           (let [id (-> (jdbc/execute-one! db
                                           ["SELECT id FROM lemmas
                            WHERE headword = ? AND sequence_number = ?
@@ -77,6 +79,10 @@
             expanded-form-unicode (when (= language-code "grc")
                                     (transcoder/beta-code->unicode
                                      (or (get analysis "orth") form-raw)))
+            ;; Lets unicode Greek search input (with or without accents)
+            ;; match this row, the same way headword_normalized does for
+            ;; lemmas -- see lang/normalize-unicode.
+            form-normalized (lang/normalize-unicode form-unicode)
             features (reduce-kv
                       (fn [m tag column]
                         (if-let [v (get analysis tag)]
@@ -87,6 +93,7 @@
             row (merge {:lemma_id lemma-id
                         :form form
                         :form_unicode form-unicode
+                        :form_normalized form-normalized
                         :expanded_form expanded-form
                         :expanded_form_unicode expanded-form-unicode
                         :bare_form bare-form}

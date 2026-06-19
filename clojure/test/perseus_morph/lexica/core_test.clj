@@ -39,14 +39,14 @@
                  <sense id=\"bad-id\" n=\"3\"><tr>unreadable id</tr></sense>
                </entryFree>")]
 
-    (testing "returns a count of senses loaded"
-      (is (= {:senses 3} (lexica/load! db "Perseus:text:1999.04.0057" file))))
+    (testing "returns a count of senses and entries loaded"
+      (is (= {:senses 3 :entries 1} (lexica/load! db "Perseus:text:1999.04.0057" file))))
 
     (testing "a well-formed id is split into entry_id/sense_id, and the lemma column
               holds SenseLoader's lexQuery (\"entry=\" + the entry's key), not the headword"
       (is (= {:entry_id 1 :sense_id 1 :document_id "Perseus:text:1999.04.0057"
               :lemma "entry=mh=nis" :sense "1" :level 1
-              :short_definition "wrath, <g>anger</g>"}
+              :definition "wrath, <g>anger</g>"}
              (-> (query-all db "SELECT * FROM senses WHERE sense_id = 1")
                  first
                  (dissoc :id)))))
@@ -60,7 +60,7 @@
                  first
                  (select-keys [:entry_id :sense_id])))))))
 
-(deftest load!-truncates-long-short-definitions-test
+(deftest load!-stores-full-untruncated-definitions-test
   (let [db (temp-db)
         long-text (apply str (repeat 150 "x"))
         file (write-temp-xml
@@ -68,10 +68,21 @@
                    "<sense id=\"n1.1\" n=\"1\"><tr>" long-text "</tr></sense>"
                    "</entryFree>"))]
     (lexica/load! db "Perseus:text:1999.04.0057" file)
-    (testing "short_definition is capped at 100 characters (97 chars + an ellipsis)"
-      (let [short-def (:short_definition (first (query-all db "SELECT short_definition FROM senses")))]
-        (is (= 100 (count short-def)))
-        (is (.endsWith short-def "..."))))))
+    (testing "definition is stored in full, unlike the legacy 100-char-capped short_definition"
+      (let [definition (:definition (first (query-all db "SELECT definition FROM senses")))]
+        (is (= (str "<g>" long-text "</g>") definition))))))
+
+(deftest load!-stores-the-full-entry-test
+  (let [db (temp-db)
+        file (write-temp-xml
+              "<entryFree key=\"mh=nis\"><orth>mh=nis</orth>
+                 <sense id=\"n1.1\" n=\"1\"><tr>wrath</tr></sense>
+               </entryFree>")]
+    (lexica/load! db "lsj" file)
+    (testing "the entry's full subtree is stored once, alongside its senses"
+      (is (= [{:document_id "lsj" :key "mh=nis"
+               :text "<orth>mh=nis</orth><sense id=\"n1.1\" n=\"1\"><tr>wrath</tr></sense>"}]
+             (query-all db "SELECT document_id, key, text FROM entries"))))))
 
 (deftest clear-existing!-test
   (let [db (temp-db)
@@ -80,7 +91,9 @@
     (lexica/load! db "lexicon-a" file)
     (lexica/load! db "lexicon-b" file)
 
-    (testing "clearing one lexicon's senses leaves other lexicons' senses alone"
+    (testing "clearing one lexicon's senses and entries leaves other lexicons' alone"
       (lexica/clear-existing! db "lexicon-a")
       (is (empty? (query-all db "SELECT * FROM senses WHERE document_id = 'lexicon-a'")))
-      (is (= 1 (count (query-all db "SELECT * FROM senses WHERE document_id = 'lexicon-b'")))))))
+      (is (empty? (query-all db "SELECT * FROM entries WHERE document_id = 'lexicon-a'")))
+      (is (= 1 (count (query-all db "SELECT * FROM senses WHERE document_id = 'lexicon-b'"))))
+      (is (= 1 (count (query-all db "SELECT * FROM entries WHERE document_id = 'lexicon-b'")))))))

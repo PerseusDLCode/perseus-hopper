@@ -21,6 +21,7 @@ class Parse(SQLModel, table=True):
     # Lemma.language_code (see clojure/src/perseus_morph/loader/schema.clj).
     form: str
     form_unicode: str | None = None
+    form_normalized: str | None = None
     expanded_form: str | None = None
     expanded_form_unicode: str | None = None
     bare_form: str | None = None
@@ -54,7 +55,17 @@ class Sense(SQLModel, table=True):
     lemma: str
     sense: str | None = None
     level: int | None = None
-    short_definition: str | None = None
+    definition: str | None = None
+
+
+class Entry(SQLModel, table=True):
+    __tablename__ = "entries"
+
+    # No surrogate id column: (document_id, key) is already the entry's
+    # natural key (see clojure/src/perseus_morph/lexica/schema.clj).
+    document_id: str = Field(primary_key=True)
+    key: str = Field(primary_key=True)
+    text: str | None = None
 
 
 class DocumentFrequency(SQLModel, table=True):

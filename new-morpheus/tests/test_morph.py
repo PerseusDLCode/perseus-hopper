@@ -1,9 +1,20 @@
+import tempfile
+
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, SQLModel, create_engine
 
 from new_morpheus.db import engine
 from new_morpheus.main import app
-from new_morpheus.morph import lookup_senses
+from new_morpheus.models import Entry, Lemma, Parse
+from new_morpheus.morph import (
+    form_frequency_scores,
+    lookup_entries,
+    lookup_parses,
+    lookup_senses,
+    prior_frequency_scores,
+    select_winning_parse,
+    word_frequency_scores,
+)
 
 client = TestClient(app)
 
@@ -28,6 +39,34 @@ def test_lookup_falls_back_to_bare_form_when_accented_form_has_no_exact_match():
     assert response.status_code == 200
     body = response.json()
     assert any(lemma["headword"] == "*)enuw/" for lemma in body["lemmas"])
+
+
+def test_lookup_falls_back_to_form_normalized_for_unicode_greek_input():
+    # morph.db doesn't have form_normalized fixture data wired up to a
+    # known Unicode Greek search term, so this exercises the query against
+    # a throwaway db of its own, the same way the entries test above does.
+    with tempfile.NamedTemporaryFile(suffix=".db") as db_file:
+        test_engine = create_engine(f"sqlite:///{db_file.name}")
+        SQLModel.metadata.create_all(test_engine, tables=[Lemma.__table__, Parse.__table__])
+        with Session(test_engine) as session:
+            lemma = Lemma(headword="*)enuw/", language_code="grc")
+            session.add(lemma)
+            session.commit()
+            session.add(
+                Parse(
+                    lemma_id=lemma.id,
+                    form="'enuw/",
+                    form_unicode="ἐνύω",
+                    form_normalized="ενυω",
+                    bare_form="enuw",
+                    dedup_key="x",
+                )
+            )
+            session.commit()
+
+        with Session(test_engine) as session:
+            grouped = lookup_parses(session, "ἐνύω", "grc")
+            assert [headword for headword, _ in grouped] == ["*)enuw/"]
 
 
 def test_lookup_is_case_insensitive_for_non_arabic_languages():
@@ -59,7 +98,7 @@ def test_document_id_attaches_weighted_frequency_for_matching_lemma():
     assert response.status_code == 200
     lemmas = response.json()["lemmas"]
     dulcis = next(lemma for lemma in lemmas if lemma["headword"] == "dulcis")
-    assert dulcis["document_frequency"] == 3.0
+    assert dulcis["document_frequency"] == 1.0
 
 
 def test_document_frequency_is_none_when_document_id_omitted():
@@ -98,3 +137,65 @@ def test_senses_are_attached_from_the_lexicon_for_the_word_s_language():
 def test_lookup_senses_is_empty_for_a_language_with_no_ingested_lexicon():
     with Session(engine) as session:
         assert lookup_senses(session, "xyz", "dulcis", -1) == []
+
+
+def test_lookup_entries_is_empty_for_a_language_with_no_ingested_lexicon():
+    with Session(engine) as session:
+        assert lookup_entries(session, "xyz", "dulcis", -1) == []
+
+
+def test_lookup_entries_returns_the_full_text_for_a_known_entry():
+    # entries has no fixture data in morph.db yet (it's new -- see
+    # clojure/src/perseus_morph/lexica/schema.clj), so this exercises the
+    # query against a throwaway db of its own rather than the shared one.
+    with tempfile.NamedTemporaryFile(suffix=".db") as db_file:
+        test_engine = create_engine(f"sqlite:///{db_file.name}")
+        SQLModel.metadata.create_all(test_engine, tables=[Entry.__table__])
+        with Session(test_engine) as session:
+            session.add(Entry(document_id="lsj", key="mh=nis", text="<orth>mh=nis</orth>"))
+            session.commit()
+
+        with Session(test_engine) as session:
+            entries = lookup_entries(session, "grc", "mh=nis", -1)
+            assert [entry.text for entry in entries] == ["<orth>mh=nis</orth>"]
+
+
+def test_form_frequency_scores_returns_a_count_for_every_candidate_parse():
+    with Session(engine) as session:
+        grouped = lookup_parses(session, "dulce", "lat")
+        scores = form_frequency_scores(session, "lat", grouped)
+
+        parse_ids = {parse.id for parses in grouped.values() for parse in parses}
+        assert scores.keys() == parse_ids
+        assert all(score >= 0 for score in scores.values())
+
+
+def test_word_frequency_scores_is_skipped_for_a_single_candidate_lemma():
+    with Session(engine) as session:
+        grouped = lookup_parses(session, "abeuntibus", "lat")
+        assert len(grouped) == 1
+        assert word_frequency_scores(grouped, {}) == {}
+
+
+def test_prior_frequency_scores_is_empty_without_a_prior_word():
+    with Session(engine) as session:
+        grouped = lookup_parses(session, "dulce", "lat")
+        assert prior_frequency_scores(session, "lat", grouped, {}) == {}
+
+
+def test_select_winning_parse_is_none_when_no_evaluator_scored_anything():
+    assert select_winning_parse({}, {}, {}) is None
+
+
+def test_select_winning_parse_averages_normalized_scores_across_evaluators():
+    # evaluator A normalizes to {1: 0.25, 2: 0.75}; evaluator B to
+    # {1: 5/6, 2: 1/6}; parse 1's average (~0.54) beats parse 2's (~0.46).
+    assert select_winning_parse({1: 1.0, 2: 3.0}, {1: 5.0, 2: 1.0}) == 1
+
+
+def test_morph_response_marks_exactly_one_winning_parse_when_ambiguous():
+    response = client.get("/morph", params={"word": "dulce", "language": "lat"})
+
+    assert response.status_code == 200
+    parses = [parse for lemma in response.json()["lemmas"] for parse in lemma["parses"]]
+    assert sum(parse["is_winner"] for parse in parses) == 1

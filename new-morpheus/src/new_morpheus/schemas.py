@@ -23,6 +23,7 @@ class ParseOut(BaseModel):
     object: str | None
     definite: str | None
     possessive: str | None
+    is_winner: bool = False
 
 
 class SenseOut(BaseModel):
@@ -31,7 +32,14 @@ class SenseOut(BaseModel):
     document_id: str
     sense: str | None
     level: int | None
-    short_definition: str | None
+    definition: str | None
+
+
+class EntryOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    document_id: str
+    text: str | None
 
 
 class LemmaResult(BaseModel):
@@ -39,6 +47,7 @@ class LemmaResult(BaseModel):
     sequence_number: int
     parses: list[ParseOut]
     senses: list[SenseOut] = []
+    entries: list[EntryOut] = []
     document_frequency: float | None = None
 
 

@@ -44,6 +44,20 @@
     form
     (to-lowercase language-code form)))
 
+(defn normalize-unicode
+  "Lowercases `s` and strips combining diacritics via NFD decomposition,
+   for the API's lookup index (lemmas.headword_normalized in
+   perseus-morph.loader.schema). Expects already-composed Unicode text
+   (e.g. headword_unicode), not Beta Code -- Beta Code diacritics are
+   markup characters, not combining marks, so they aren't decomposable
+   and must be stripped separately via bare-form."
+  [s]
+  (when s
+    (-> s
+        (java.text.Normalizer/normalize java.text.Normalizer$Form/NFD)
+        (clojure.string/replace #"\p{M}" "")
+        clojure.string/lower-case)))
+
 (def language-name->code
   "Maps the English language names used by morph XML filenames
    (greek.morph.xml, latin.morph.xml, arabic.morph.xml) to the ISO 639

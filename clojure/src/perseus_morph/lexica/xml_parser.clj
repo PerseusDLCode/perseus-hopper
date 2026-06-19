@@ -1,84 +1,146 @@
 (ns perseus-morph.lexica.xml-parser
-  "Streaming SAX parser for TEI dictionary XML (entry/entryFree elements
-   containing sense children), ported from
-   perseus.voting.SenseLoader$SenseLoaderHandler. Calls `on-sense` once per
-   </sense> with {:key :id :n :level :short-def}, where :key is the
-   enclosing entry's `key` attribute, :id/:n/:level are the sense's own
-   attributes, and :short-def is the sense's accumulated text with each
-   tr/gloss/hi child wrapped in `meaning-tag` (so a sense containing
-   '<tr>foo</tr><tr>bar</tr>' with meaning-tag \"i\" yields
-   \"<i>foo</i><i>bar</i>\"), or \"[no specified meaning]\" if the sense had
-   no text at all. Streams the file rather than building a DOM, since these
-   lexicon files are expected to be large."
+  "Parser for TEI dictionary XML (entry/entryFree elements containing sense
+   children), ported from perseus.voting.SenseLoader$SenseLoaderHandler.
+   Unlike that SAX handler (and this namespace's own earlier SAX-based
+   version), this parses the whole file into a tree via clojure.xml/parse
+   and walks it with a zipper -- these lexicon files aren't large enough to
+   need streaming, and a tree lets sense extraction handle *nested* <sense>
+   elements correctly (a sense's own text, separate from any sub-senses'),
+   where a single-pass SAX handler with no element stack could only
+   conflate them. (clojure.xml/parse drops whitespace-only text nodes
+   between sibling elements, so reconstructed entry text won't always have
+   the exact whitespace the source did -- acceptable here.)
+
+   `parse-lexicon!` invokes `on-sense` once per <sense>, anywhere in an
+   entry's subtree, with {:key :id :n :level :short-def}, where :key is the
+   enclosing entry's `key` attribute and :short-def is that sense's *own*
+   text (tr/gloss/hi children wrapped in `meaning-tag`; nested sub-senses'
+   text excluded, since those get their own on-sense calls), or
+   \"[no specified meaning]\" if the sense has no text of its own. It also
+   invokes `on-entry` once per entry, anywhere in the document, with
+   {:key :text}, where :text is a serialization of the entry's full
+   subtree (every descendant tag, attribute, and text node) -- captured
+   independently of on-sense, so the whole entry is available for display
+   without re-reading the source XML at request time."
   (:require [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [clojure.xml :as xml]
+            [clojure.zip :as zip])
   (:import (javax.xml.parsers SAXParserFactory)
-           (org.xml.sax Attributes InputSource)
-           (org.xml.sax.helpers DefaultHandler)))
+           (org.xml.sax InputSource)))
 
-(defn- entry-element? [qname]
-  (contains? #{"entry" "entryfree"} (str/lower-case qname)))
+(defn- tag-name [node]
+  (str/lower-case (name (:tag node))))
 
-(defn- sense-element? [qname]
-  (= (str/lower-case qname) "sense"))
+(defn- entry? [node]
+  (and (map? node) (contains? #{"entry" "entryfree"} (tag-name node))))
 
-(defn- meaning-element? [qname]
-  (contains? #{"tr" "gloss" "hi"} (str/lower-case qname)))
+(defn- sense? [node]
+  (and (map? node) (= (tag-name node) "sense")))
 
-(defn- sense-handler ^DefaultHandler [meaning-tag on-sense]
-  (let [current-key (atom nil)
-        in-sense (atom false)
-        sense-attrs (atom nil)
-        meaning (StringBuilder.)
-        has-meaning (atom false)]
-    (proxy [DefaultHandler] []
-      (startElement [_uri _local-name ^String qname ^Attributes attrs]
-        (cond
-          (entry-element? qname)
-          (reset! current-key (.getValue attrs "key"))
+(defn- meaning-element? [node]
+  (and (map? node) (contains? #{"tr" "gloss" "hi"} (tag-name node))))
 
-          (sense-element? qname)
-          (do (reset! in-sense true)
-              (reset! sense-attrs {:n (.getValue attrs "n")
-                                    :id (.getValue attrs "id")
-                                    :level (.getValue attrs "level")})
-              (.setLength meaning 0)
-              (reset! has-meaning false))
+(defn- descendant-elements
+  "Every element (map) node in `node`'s subtree, in document order, not
+   including `node` itself."
+  [node]
+  (mapcat (fn [child]
+            (when (map? child)
+              (cons child (descendant-elements child))))
+          (:content node)))
 
-          (and @in-sense (meaning-element? qname))
-          (do (.append meaning (str "<" meaning-tag ">"))
-              (reset! has-meaning true))))
+(defn- own-text
+  "`node`'s own text: every character and tr/gloss/hi-wrapped descendant,
+   except inside a nested <sense> (that subtree gets its own on-sense call,
+   via the top-level walk in parse-lexicon!, so its text shouldn't also be
+   folded into this node's)."
+  [node meaning-tag]
+  (letfn [(walk [n]
+            (cond
+              (string? n) n
+              (sense? n) ""
+              (meaning-element? n) (str "<" meaning-tag ">"
+                                         (apply str (map walk (:content n)))
+                                         "</" meaning-tag ">")
+              (map? n) (apply str (map walk (:content n)))
+              :else ""))]
+    (apply str (map walk (:content node)))))
 
-      (endElement [_uri _local-name ^String qname]
-        (cond
-          (sense-element? qname)
-          (do (reset! in-sense false)
-              (on-sense (assoc @sense-attrs
-                                :key @current-key
-                                :short-def (if @has-meaning
-                                             (.toString meaning)
-                                             "[no specified meaning]"))))
+(defn- escape-text [^String s]
+  (-> s
+      (str/replace "&" "&amp;")
+      (str/replace "<" "&lt;")
+      (str/replace ">" "&gt;")))
 
-          (and @in-sense (meaning-element? qname))
-          (.append meaning (str "</" meaning-tag ">"))))
+(defn- escape-attr [^String s]
+  (-> (escape-text s)
+      (str/replace "\"" "&quot;")))
 
-      (characters [chars start length]
-        (when @in-sense
-          (reset! has-meaning true)
-          (.append meaning chars start length))))))
+(defn- serialize
+  "A node's subtree, reconstructed as XML text (tags, attributes in
+   alphabetical order for determinism, and escaped character data) -- not
+   necessarily byte-identical to the source (attribute order and
+   inter-element whitespace may not match), but a faithful, self-contained
+   rendering of its content."
+  [node]
+  (cond
+    (string? node) (escape-text node)
+    (map? node) (let [tag (name (:tag node))
+                      attrs (apply str (for [[k v] (sort-by key (:attrs node))]
+                                          (str " " (name k) "=\"" (escape-attr v) "\"")))]
+                  (str "<" tag attrs ">"
+                       (apply str (map serialize (:content node)))
+                       "</" tag ">"))
+    :else ""))
 
-(defn parse-senses!
-  "Parses `filename` (a path or java.io.File), invoking `on-sense` with each
-   completed sense's attributes/short-def map, wrapping tr/gloss/hi text in
-   `meaning-tag`."
-  [filename meaning-tag on-sense]
-  (let [factory (SAXParserFactory/newInstance)
-        parser (.newSAXParser factory)
-        reader (.getXMLReader parser)]
-    ;; These lexicon files' internal DTD subsets pull in external parameter
-    ;; entities (e.g. Perseus's PersDict.dtd) purely to declare additional
-    ;; markup, none of which this parser needs -- skip resolving them so
-    ;; parsing doesn't depend on network access to perseus.tufts.edu/tei-c.org.
+(defn- entry-text [entry-node]
+  (apply str (map serialize (:content entry-node))))
+
+(defn- entry-nodes
+  "Every entry/entryFree element anywhere in the parsed document, in
+   document order, found by walking a zipper rather than assuming entries
+   are direct children of the root (TEI dictionaries commonly wrap them in
+   <body>/<div1>/etc)."
+  [root]
+  (loop [loc (zip/xml-zip root)
+         found []]
+    (if (zip/end? loc)
+      found
+      (let [node (zip/node loc)]
+        (recur (zip/next loc)
+               (if (entry? node) (conj found node) found))))))
+
+(defn- sense-row [entry-key meaning-tag sense-node]
+  (let [{:keys [id n level]} (:attrs sense-node)
+        text (own-text sense-node meaning-tag)]
+    {:key entry-key
+     :id id
+     :n n
+     :level level
+     :short-def (if (str/blank? text) "[no specified meaning]" text)}))
+
+(defn- startparse-no-dtd
+  "A clojure.xml/parse `startparse` function that skips resolving external
+   DTD entities (e.g. Perseus's PersDict.dtd) -- these files' internal DTD
+   subsets pull them in purely to declare additional markup, none of which
+   this parser needs, so there's no reason parsing should depend on network
+   access to perseus.tufts.edu/tei-c.org."
+  [^InputSource source content-handler]
+  (let [reader (.getXMLReader (.newSAXParser (SAXParserFactory/newInstance)))]
     (.setFeature reader "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
-    (with-open [stream (io/input-stream filename)]
-      (.parse parser (InputSource. stream) (sense-handler meaning-tag on-sense)))))
+    (.setContentHandler reader content-handler)
+    (.parse reader source)))
+
+(defn parse-lexicon!
+  "Parses `filename` (a path or java.io.File), invoking `on-sense` with
+   every sense's {:key :id :n :level :short-def} and `on-entry` with every
+   entry's {:key :text}, both in document order."
+  [filename meaning-tag on-sense on-entry]
+  (with-open [stream (io/input-stream filename)]
+    (let [root (xml/parse (InputSource. stream) startparse-no-dtd)]
+      (doseq [entry (entry-nodes root)]
+        (let [key (:key (:attrs entry))]
+          (doseq [sense (filter sense? (descendant-elements entry))]
+            (on-sense (sense-row key meaning-tag sense)))
+          (on-entry {:key key :text (entry-text entry)}))))))

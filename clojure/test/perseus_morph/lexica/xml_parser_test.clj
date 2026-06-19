@@ -8,13 +8,18 @@
     (spit file contents)
     file))
 
-(defn- senses-of [contents meaning-tag]
-  (let [senses (atom [])]
-    (xml-parser/parse-senses! (write-temp-xml contents) meaning-tag
-                               (fn [sense] (swap! senses conj sense)))
-    @senses))
+(defn- parse [contents meaning-tag]
+  (let [senses (atom [])
+        entries (atom [])]
+    (xml-parser/parse-lexicon! (write-temp-xml contents) meaning-tag
+                                (fn [sense] (swap! senses conj sense))
+                                (fn [entry] (swap! entries conj entry)))
+    {:senses @senses :entries @entries}))
 
-(deftest parse-senses!-test
+(defn- senses-of [contents meaning-tag]
+  (:senses (parse contents meaning-tag)))
+
+(deftest parse-lexicon!-senses-test
   (testing "a sense's attributes are captured, and tr text is wrapped in meaning-tag"
     (is (= [{:key "abc" :id "n1.1" :n "1" :level "1" :short-def "A <i>first</i> meaning."}]
            (senses-of "<entryFree key=\"abc\">
@@ -55,4 +60,33 @@
                          <entryFree key=\"abc\"><sense id=\"n1.1\" n=\"1\"><tr>one</tr></sense></entryFree>
                          <entryFree key=\"xyz\"><sense id=\"n2.1\" n=\"1\"><tr>two</tr></sense></entryFree>
                        </body>"
+                      "i"))))
+
+  (testing "a nested sub-sense gets its own row, and the parent's short-def
+            doesn't inherit the sub-sense's text"
+    (is (= [{:key "abc" :id "n1.1" :n "A" :level "1" :short-def "[no specified meaning]"}
+            {:key "abc" :id "n1.2" :n "1" :level "2" :short-def "<i>inner</i>"}]
+           (senses-of "<entryFree key=\"abc\">
+                         <sense id=\"n1.1\" n=\"A\" level=\"1\">
+                           <sense id=\"n1.2\" n=\"1\" level=\"2\"><tr>inner</tr></sense>
+                         </sense>
+                       </entryFree>"
                       "i")))))
+
+(deftest parse-lexicon!-entries-test
+  (testing "an entry's full subtree (every tag, attribute, and text) is reconstructed,
+            with attributes in alphabetical order"
+    (is (= [{:key "abc" :text "<orth>foo</orth><sense id=\"n1.1\" n=\"1\"><tr>bar</tr></sense>"}]
+           (:entries (parse "<entryFree key=\"abc\"><orth>foo</orth> <sense id=\"n1.1\" n=\"1\"><tr>bar</tr></sense></entryFree>"
+                             "i")))))
+
+  (testing "each entry is reported once, regardless of how many senses (including nested
+            ones) it contains"
+    (is (= 1 (count (:entries (parse "<entryFree key=\"abc\"><sense id=\"n1.1\" n=\"A\"><sense id=\"n1.2\" n=\"1\">one</sense><sense id=\"n1.3\" n=\"2\">two</sense></sense></entryFree>"
+                                      "i"))))))
+
+  (testing "every entry in the document is reported, in document order"
+    (is (= [{:key "abc" :text "<sense id=\"n1.1\" n=\"1\">one</sense>"}
+            {:key "xyz" :text "<sense id=\"n2.1\" n=\"1\">two</sense>"}]
+           (:entries (parse "<body><entryFree key=\"abc\"><sense id=\"n1.1\" n=\"1\">one</sense></entryFree><entryFree key=\"xyz\"><sense id=\"n2.1\" n=\"1\">two</sense></entryFree></body>"
+                             "i"))))))

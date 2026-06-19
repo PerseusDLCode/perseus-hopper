@@ -17,6 +17,14 @@
   (testing "falls through to the default (plain) lowercase"
     (is (= "abeuntibus" (lang/to-lowercase "lat" "ABEUNTIBUS")))))
 
+(deftest normalize-unicode-test
+  (testing "strips combining diacritics and lowercases composed Unicode text"
+    (is (= "ενυω" (lang/normalize-unicode "Ἐνύω"))))
+  (testing "is a no-op for already bare, lowercase text"
+    (is (= "ενυω" (lang/normalize-unicode "ενυω"))))
+  (testing "passes nil through"
+    (is (nil? (lang/normalize-unicode nil)))))
+
 (deftest match-case-test
   (is (false? (lang/match-case? "grc")))
   (is (false? (lang/match-case? "lat")))

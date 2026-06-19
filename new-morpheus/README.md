@@ -6,7 +6,11 @@ database produced by the Clojure ingestion pipeline in `../clojure`).
 ## Setup
 
 Requires the `morph.db` file to exist at `../clojure/morph.db` (run the
-Clojure ingestion pipeline first if it doesn't).
+Clojure ingestion pipeline first if it doesn't), migrated to the current
+schema (`clj -M -m perseus-morph.migrations` or any code path that calls
+`perseus-morph.migrations/migrate!`, e.g. any namespace's `init-db!`) and
+with lexica ingested via `clj -M:ingest` so the `senses`/`entries` tables
+backing `senses`/`entries` in the API response are populated.
 
 ```sh
 uv sync
@@ -37,8 +41,28 @@ uv run pytest
 
 ## API
 
-`GET /morph?word=<word>&language=<language_code>&document_id=<optional>`
+`GET /morph?word=<word>&language=<language_code>&document_id=<optional>&prior_word=<optional>`
 
-Returns the candidate lemmas and parses for `word`. If `document_id` is
-given, each lemma includes its `document_frequency` (weighted frequency of
-that lemma within the given document), or `null` if none is recorded.
+Returns the candidate lemmas and parses for `word`. `word` must be in beta
+code (the encoding `parses.form` is stored in), not Unicode -- e.g. `mh=nin`
+for `μῆνιν`. Each lemma includes its `senses` (short, per-sense glosses from
+the ingested lexicon, e.g. LSJ for Greek) and `entries` (the full text of
+that lexicon's whole dictionary article for the lemma, so the UI doesn't
+need to re-read the source XML for a complete view). If `document_id` is
+given, each lemma also includes its `document_frequency` (weighted
+frequency of that lemma within the given document), or `null` if none is
+recorded. `document_id` and `prior_word` (the preceding word in the text,
+also beta code) also feed disambiguation: whichever candidate parse scores
+highest once corpus-wide form frequency, in-document lemma frequency, and
+prior-word bigram frequency are averaged together gets `is_winner: true`.
+
+Example: looking up μῆνιν (`mh=nin`), the first word of the *Iliad*
+(tlg0012.tlg001.perseus-grc2:1.1) -- document_id is whole-document only, so
+the API has no notion of "line 1.1" beyond it being a word in that document:
+
+```sh
+curl -G "http://127.0.0.1:8000/morph" \
+  --data-urlencode "word=mh=nin" \
+  --data-urlencode "language=grc" \
+  --data-urlencode "document_id=tlg0012.tlg001.perseus-grc2"
+```

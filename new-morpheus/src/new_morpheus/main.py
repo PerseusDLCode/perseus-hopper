@@ -5,8 +5,17 @@ from fastapi import Depends, FastAPI
 from sqlmodel import Session
 
 from .db import get_session
-from .morph import document_frequency, lookup_parses, lookup_senses
-from .schemas import LemmaResult, MorphResponse, ParseOut, SenseOut
+from .morph import (
+    document_frequency,
+    form_frequency_scores,
+    lookup_entries,
+    lookup_parses,
+    lookup_senses,
+    prior_frequency_scores,
+    select_winning_parse,
+    word_frequency_scores,
+)
+from .schemas import EntryOut, LemmaResult, MorphResponse, ParseOut, SenseOut
 
 app = FastAPI(title="new-morpheus")
 
@@ -16,24 +25,42 @@ def morph(
     word: str,
     language: str = "grc",
     document_id: str | None = None,
+    prior_word: str | None = None,
     session: Session = Depends(get_session),
 ) -> MorphResponse:
     grouped = lookup_parses(session, word, language)
+
+    document_frequencies = {
+        key: document_frequency(session, language, document_id, *key) if document_id else None
+        for key in grouped
+    }
+    prior_grouped = lookup_parses(session, prior_word, language) if prior_word else {}
+
+    winner_id = select_winning_parse(
+        word_frequency_scores(grouped, document_frequencies),
+        form_frequency_scores(session, language, grouped),
+        prior_frequency_scores(session, language, grouped, prior_grouped),
+    )
 
     lemmas = [
         LemmaResult(
             headword=headword,
             sequence_number=sequence_number,
-            parses=[ParseOut.model_validate(parse) for parse in parses],
+            parses=[
+                ParseOut.model_validate(parse).model_copy(
+                    update={"is_winner": parse.id == winner_id}
+                )
+                for parse in parses
+            ],
             senses=[
                 SenseOut.model_validate(sense)
                 for sense in lookup_senses(session, language, headword, sequence_number)
             ],
-            document_frequency=(
-                document_frequency(session, language, document_id, headword, sequence_number)
-                if document_id
-                else None
-            ),
+            entries=[
+                EntryOut.model_validate(entry)
+                for entry in lookup_entries(session, language, headword, sequence_number)
+            ],
+            document_frequency=document_frequencies[(headword, sequence_number)],
         )
         for (headword, sequence_number), parses in grouped.items()
     ]

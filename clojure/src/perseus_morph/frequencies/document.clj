@@ -1,5 +1,5 @@
 (ns perseus-morph.frequencies.document
-  "DDL and counting for per-document lemma frequency, the SQLite analog of
+  "Counting for per-document lemma frequency, the SQLite analog of
    perseus.ie.freq.EntityDocumentFrequency/WordFrequencyLoader, used by
    perseus.eval.morph.WordFrequencyEvaluator to disambiguate a token's parses
    by how common its candidate lemmas are *in this document specifically*
@@ -21,29 +21,18 @@
    already the lemma's identity in perseus-morph.loader.schema's `lemmas`
    table, so duplicating it here would just be another copy to keep in
    sync (and language_code doubly so, since it's already fixed by the
-   referenced lemma)."
-  (:require [next.jdbc :as jdbc]))
+   referenced lemma).
 
-(def ddl
-  ["CREATE TABLE IF NOT EXISTS document_frequencies (
-      document_id TEXT NOT NULL,
-      -- ON DELETE CASCADE: this row's count is meaningless once its lemma
-      -- is gone (e.g. a re-load of the lemma's language via
-      -- perseus-morph.loader.core/delete-by-language!, which mints new
-      -- lemma_ids), so it shouldn't outlive it either.
-      lemma_id INTEGER NOT NULL REFERENCES lemmas (id) ON DELETE CASCADE,
-      weighted_frequency REAL NOT NULL DEFAULT 0,
-      UNIQUE (document_id, lemma_id)
-    )"])
+   The actual DDL lives in resources/migrations (see
+   perseus-morph.migrations), not here."
+  (:require [next.jdbc :as jdbc]
+            [perseus-morph.migrations :as migrations]))
 
 (defn init-db!
-  "Creates the document_frequencies table if it doesn't already exist.
-   Additive: does not touch any other table (but does assume `lemmas` from
-   perseus-morph.loader.schema already exists, since lemma_id references
-   it)."
+  "Runs every pending migration against `db`, creating the
+   document_frequencies table if it doesn't already exist."
   [db]
-  (doseq [stmt ddl]
-    (jdbc/execute! db [stmt])))
+  (migrations/migrate! db))
 
 (defn update-document-counts
   "Given one token's candidate parses grouped by lemma (as

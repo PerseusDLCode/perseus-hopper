@@ -3,7 +3,12 @@
    SQLite, ported from perseus.voting.SenseLoader. Each <sense> becomes one
    row in the `senses` table, keyed by its entry/sense number pair (parsed
    out of the sense's `id` attribute, e.g. \"n12.34\" -> entry 12, sense 34)
-   plus the lexicon's document id."
+   plus the lexicon's document id. Each <entry>/<entryFree> also becomes one
+   row in the `entries` table, holding its full text -- unlike `senses`,
+   this isn't a SenseLoader-derived table: the original system instead read
+   entries on demand from the source XML by byte offset (see
+   perseus.document.Chunk.getText), which this port avoids needing to do at
+   request time."
   (:require [next.jdbc :as jdbc]
             [perseus-morph.lexica.xml-parser :as xml-parser]))
 
@@ -35,36 +40,36 @@
     (do (println "WARN: Error getting IDs for" id)
         [-1 -1])))
 
-(defn- truncate-short-def
-  "The short_definition column is 100 chars; longer text is cut to 97 chars
-   plus an ellipsis, possibly leaving a tag open (SenseLoader.insertSense
-   accepted the same imprecision)."
-  [short-def]
-  (if (> (count short-def) 100)
-    (str (subs short-def 0 97) "...")
-    short-def))
-
 (defn clear-existing!
-  "Deletes any existing senses for `lexicon-id`, mirroring
-   SenseLoader.clearExisting."
+  "Deletes any existing senses and entries for `lexicon-id`, mirroring
+   SenseLoader.clearExisting (extended to the entries table, which
+   SenseLoader had no equivalent of)."
   [db lexicon-id]
-  (jdbc/execute! db ["DELETE FROM senses WHERE document_id = ?" lexicon-id]))
+  (jdbc/execute! db ["DELETE FROM senses WHERE document_id = ?" lexicon-id])
+  (jdbc/execute! db ["DELETE FROM entries WHERE document_id = ?" lexicon-id]))
 
 (defn- insert-sense! [db row]
   (jdbc/execute! db
                  ["INSERT INTO senses
-                     (entry_id, sense_id, document_id, lemma, sense, level, short_definition)
+                     (entry_id, sense_id, document_id, lemma, sense, level, definition)
                    VALUES (?, ?, ?, ?, ?, ?, ?)"
                   (:entry-id row) (:sense-id row) (:document-id row)
-                  (:lemma row) (:sense row) (:level row) (:short-definition row)]))
+                  (:lemma row) (:sense row) (:level row) (:definition row)]))
+
+(defn- insert-entry! [db lexicon-id key text]
+  (jdbc/execute! db
+                 ["INSERT INTO entries (document_id, key, text) VALUES (?, ?, ?)"
+                  lexicon-id key text]))
 
 (defn load!
-  "Streams `filename`'s senses, inserting one `senses` row per <sense>.
-   `lexicon-id` is the lexicon's Perseus document id (used as the senses
-   table's document_id, and to look up the meaning-tag for this lexicon)."
+  "Parses `filename`'s entries, inserting one `senses` row per <sense> and
+   one `entries` row per <entry>/<entryFree>. `lexicon-id` is the lexicon's
+   Perseus document id (used as both tables' document_id, and to look up
+   the meaning-tag for this lexicon's senses)."
   [db lexicon-id filename]
-  (let [sense-count (volatile! 0)]
-    (xml-parser/parse-senses!
+  (let [sense-count (volatile! 0)
+        entry-count (volatile! 0)]
+    (xml-parser/parse-lexicon!
      filename (meaning-tag lexicon-id)
      (fn [{:keys [key id n level short-def]}]
        (let [[entry-id sense-id] (parse-ids id)]
@@ -75,6 +80,9 @@
                          :lemma (str "entry=" key)
                          :sense n
                          :level (if level (Integer/parseInt level) -1)
-                         :short-definition (truncate-short-def short-def)})
-         (vswap! sense-count inc))))
-    {:senses @sense-count}))
+                         :definition short-def})
+         (vswap! sense-count inc)))
+     (fn [{:keys [key text]}]
+       (insert-entry! db lexicon-id key text)
+       (vswap! entry-count inc)))
+    {:senses @sense-count :entries @entry-count}))
