@@ -6,12 +6,18 @@
 
    Mirrors perseus.morph.MorphCodeAggregator's per-document loop
    (processToken / endDocument), but reads TEI files directly rather than
-   from the original's Document/Chunk/Token database, and skips
-   perseus.util.Stoplist entirely (no Clojure port of it exists yet, so
-   every token's parses are carried forward as `previous-parses`, same as
-   the original's behavior when getPriorFrequencyStoplist returns null)."
+   from the original's Document/Chunk/Token database. Deliberately does not
+   port MorphCodeAggregator#hasLemmasInStoplist: that method keys its
+   perseus.util.Stoplist lookup on Lemma#toString(), which returns a
+   multi-line debug dump (id/authorityName/headword/sequenceNumber/...),
+   not the headword -- so it can never match an entry in a stoplist file of
+   bare headwords, and hasLemmasInStoplist always returns false in
+   practice. This port's every-token's-parses-carried-forward-as
+   previous-parses behavior already matches that actual (if unintended)
+   runtime behavior, so there is nothing to port here."
   (:require [clojure.java.io :as io]
             [clojure.string]
+            [next.jdbc :as jdbc]
             [perseus-morph.frequencies.aggregator :as agg]
             [perseus-morph.frequencies.document :as doc-freq]
             [perseus-morph.language :as lang]
@@ -190,16 +196,23 @@
    per-document flush, since each of these corpus files already corresponds
    to one whole document (no further chunking, the way the original's Chunk
    model allowed). The file's own basename stands in for the document id;
-   see document-id."
+   see document-id.
+
+   The three write-*! calls run inside one transaction rather than each
+   upsert committing (and, under journal_mode=WAL, syncing) on its own --
+   a document's worth of counts is the natural unit of \"this should all
+   land or none of it should\", and batching them is far cheaper than one
+   commit per row."
   [db filename]
   (when-let [language-code (guess-language-code filename)]
     (let [tokens (extract-tokens filename)
           doc-id (document-id filename)
           {:keys [morph-counts prior-counts document-counts]}
           (process-tokens language-code doc-id (cached-lookup db language-code) tokens)]
-      (agg/write-morph-counts! db morph-counts)
-      (agg/write-prior-counts! db prior-counts)
-      (doc-freq/write-document-counts! db document-counts)
+      (jdbc/with-transaction [tx db]
+        (agg/write-morph-counts! tx morph-counts)
+        (agg/write-prior-counts! tx prior-counts)
+        (doc-freq/write-document-counts! tx document-counts))
       {:filename (str filename) :language-code language-code
        :document-id doc-id :token-count (count tokens)})))
 

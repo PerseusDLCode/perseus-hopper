@@ -9,17 +9,19 @@
 
 (def ddl
   ["CREATE TABLE IF NOT EXISTS senses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
       entry_id INTEGER NOT NULL DEFAULT -1,
       sense_id INTEGER NOT NULL DEFAULT -1,
       document_id TEXT NOT NULL,
       lemma TEXT NOT NULL,
       sense TEXT,
       level INTEGER,
-      short_definition TEXT,
-      PRIMARY KEY (entry_id, sense_id, document_id)
+      short_definition TEXT
     )"
    "CREATE INDEX IF NOT EXISTS idx_senses_document_lemma
-      ON senses (document_id, lemma)"])
+      ON senses (document_id, lemma)"
+   "CREATE INDEX IF NOT EXISTS idx_senses_entry_sense_document
+      ON senses (entry_id, sense_id, document_id)"])
 
 (defn init-db!
   "Creates the senses table (and its index) if it doesn't already exist."

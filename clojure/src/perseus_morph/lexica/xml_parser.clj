@@ -73,6 +73,12 @@
    `meaning-tag`."
   [filename meaning-tag on-sense]
   (let [factory (SAXParserFactory/newInstance)
-        parser (.newSAXParser factory)]
+        parser (.newSAXParser factory)
+        reader (.getXMLReader parser)]
+    ;; These lexicon files' internal DTD subsets pull in external parameter
+    ;; entities (e.g. Perseus's PersDict.dtd) purely to declare additional
+    ;; markup, none of which this parser needs -- skip resolving them so
+    ;; parsing doesn't depend on network access to perseus.tufts.edu/tei-c.org.
+    (.setFeature reader "http://apache.org/xml/features/nonvalidating/load-external-dtd" false)
     (with-open [stream (io/input-stream filename)]
       (.parse parser (InputSource. stream) (sense-handler meaning-tag on-sense)))))

@@ -34,9 +34,18 @@
 
       :else
       (let [dir (first arguments)
-            db (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
-        (freq-schema/init-db! db)
-        (doc-schema/init-db! db)
-        (println "Walking" dir "into" (:db options))
-        (let [result (walker/walk! db dir)]
-          (println "Done:" result))))))
+            ds (jdbc/get-datasource (str "jdbc:sqlite:" (:db options)))]
+        (with-open [db (jdbc/get-connection ds)]
+          ;; A single connection, held open for the whole walk, with WAL +
+          ;; relaxed synchronous: the default (one implicit autocommit
+          ;; transaction per INSERT, journal_mode=DELETE) fsyncs on every
+          ;; single upsert, which dominates runtime once write-morph-counts!/
+          ;; write-prior-counts!/write-document-counts! are issuing one
+          ;; statement per row per document.
+          (jdbc/execute! db ["PRAGMA journal_mode=WAL"])
+          (jdbc/execute! db ["PRAGMA synchronous=NORMAL"])
+          (freq-schema/init-db! db)
+          (doc-schema/init-db! db)
+          (println "Walking" dir "into" (:db options))
+          (let [result (walker/walk! db dir)]
+            (println "Done:" result)))))))

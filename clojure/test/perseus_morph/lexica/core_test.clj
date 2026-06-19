@@ -46,7 +46,9 @@
       (is (= {:entry_id 1 :sense_id 1 :document_id "Perseus:text:1999.04.0057"
               :lemma "entry=mh=nis" :sense "1" :level 1
               :short_definition "wrath, <g>anger</g>"}
-             (first (query-all db "SELECT * FROM senses WHERE sense_id = 1")))))
+             (-> (query-all db "SELECT * FROM senses WHERE sense_id = 1")
+                 first
+                 (dissoc :id)))))
 
     (testing "a sense with no level attribute defaults level to -1, matching SenseLoader"
       (is (= -1 (:level (first (query-all db "SELECT level FROM senses WHERE sense_id = 2"))))))
