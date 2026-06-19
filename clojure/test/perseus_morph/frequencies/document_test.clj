@@ -3,7 +3,7 @@
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
             [perseus-morph.frequencies.document :as doc-freq]
-            [perseus-morph.loader.schema :as loader-schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite]))
 
 (defn- temp-db
@@ -14,8 +14,7 @@
   (let [file (java.io.File/createTempFile "document-freq-test" ".db")]
     (.deleteOnExit file)
     (let [db (sqlite/datasource (.getAbsolutePath file))]
-      (loader-schema/init-db! db)
-      (doc-freq/init-db! db)
+      (migrations/migrate! db)
       db)))
 
 (defn- query-one [db sql]

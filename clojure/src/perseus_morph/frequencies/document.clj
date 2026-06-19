@@ -25,14 +25,7 @@
 
    The actual DDL lives in resources/migrations (see
    perseus-morph.migrations), not here."
-  (:require [next.jdbc :as jdbc]
-            [perseus-morph.migrations :as migrations]))
-
-(defn init-db!
-  "Runs every pending migration against `db`, creating the
-   document_frequencies table if it doesn't already exist."
-  [db]
-  (migrations/migrate! db))
+  (:require [next.jdbc :as jdbc]))
 
 (defn update-document-counts
   "Given one token's candidate parses grouped by lemma (as
@@ -57,13 +50,16 @@
 (defn write-document-counts!
   "Upserts the accumulated document-count map into document_frequencies,
    mirroring HibernateFrequencyDAO.updateDocumentFrequencies's
-   insert-or-add-to-existing-row behavior."
+   insert-or-add-to-existing-row behavior. Batched via `execute-batch!`
+   rather than one `execute!` per row."
   [db counts]
-  (doseq [[[document-id lemma-id] freq] counts]
-    (jdbc/execute! db
-                   ["INSERT INTO document_frequencies
-                       (document_id, lemma_id, weighted_frequency)
-                     VALUES (?, ?, ?)
-                     ON CONFLICT (document_id, lemma_id)
-                     DO UPDATE SET weighted_frequency = weighted_frequency + excluded.weighted_frequency"
-                    document-id lemma-id freq])))
+  (when (seq counts)
+    (jdbc/execute-batch! db
+                         "INSERT INTO document_frequencies
+                            (document_id, lemma_id, weighted_frequency)
+                          VALUES (?, ?, ?)
+                          ON CONFLICT (document_id, lemma_id)
+                          DO UPDATE SET weighted_frequency = weighted_frequency + excluded.weighted_frequency"
+                         (for [[[document-id lemma-id] freq] counts]
+                           [document-id lemma-id freq])
+                         {})))

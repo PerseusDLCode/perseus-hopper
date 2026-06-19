@@ -8,7 +8,7 @@ database produced by the Clojure ingestion pipeline in `../clojure`).
 Requires the `morph.db` file to exist at `../clojure/morph.db` (run the
 Clojure ingestion pipeline first if it doesn't), migrated to the current
 schema (`clj -M -m perseus-morph.migrations` or any code path that calls
-`perseus-morph.migrations/migrate!`, e.g. any namespace's `init-db!`) and
+`perseus-morph.migrations/migrate!`) and
 with lexica ingested via `clj -M:ingest` so the `senses`/`entries` tables
 backing `senses`/`entries` in the API response are populated.
 

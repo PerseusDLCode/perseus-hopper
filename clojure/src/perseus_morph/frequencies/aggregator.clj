@@ -100,40 +100,46 @@
 (defn write-morph-counts!
   "Upserts the accumulated morph-count map into morph_frequencies,
    mirroring writeMorphCounts's
-   'INSERT ... ON DUPLICATE KEY UPDATE count=count+?'."
+   'INSERT ... ON DUPLICATE KEY UPDATE count=count+?'. Every row shares the
+   same column set (feature-row always emits every feature column, nil or
+   not), so the whole map can go through one prepared statement via
+   `execute-batch!` instead of preparing + executing a fresh statement per
+   row."
   [db counts]
-  (doseq [[[language-code features] freq] counts]
-    (let [row (assoc (feature-row features) :language_code language-code :count freq)
-          columns (keys row)
+  (when (seq counts)
+    (let [rows (for [[[language-code features] freq] counts]
+                 (assoc (feature-row features) :language_code language-code :count freq))
+          columns (keys (first rows))
           column-names (map name columns)
-          placeholders (repeat (count columns) "?")]
-      (jdbc/execute! db
-                     (into [(format "INSERT INTO morph_frequencies (%s) VALUES (%s)
-                                     ON CONFLICT (language_code, feature_key)
-                                     DO UPDATE SET count = count + excluded.count"
-                                    (clojure.string/join ", " column-names)
-                                    (clojure.string/join ", " placeholders))]
-                           (vals row))))))
+          placeholders (repeat (count columns) "?")
+          sql (format "INSERT INTO morph_frequencies (%s) VALUES (%s)
+                       ON CONFLICT (language_code, feature_key)
+                       DO UPDATE SET count = count + excluded.count"
+                      (clojure.string/join ", " column-names)
+                      (clojure.string/join ", " placeholders))]
+      (jdbc/execute-batch! db sql (map (fn [row] (map row columns)) rows) {}))))
 
 (defn write-prior-counts!
   "Upserts the accumulated bigram-count map into prior_frequencies,
    mirroring writePriorCounts's
-   'INSERT ... ON DUPLICATE KEY UPDATE count=count+?'."
+   'INSERT ... ON DUPLICATE KEY UPDATE count=count+?'. As in
+   write-morph-counts!, every row shares the same column set, so the whole
+   map goes through one prepared statement via `execute-batch!`."
   [db counts]
-  (doseq [[[language-code previous-features current-features] freq] counts]
-    (let [previous-row (->> (feature-row previous-features)
-                            (reduce-kv #(assoc %1 (keyword (str "previous_" (name %2))) %3) {}))
-          current-row (->> (feature-row current-features)
-                           (reduce-kv #(assoc %1 (keyword (str "current_" (name %2))) %3) {}))
-          row (merge previous-row current-row
-                     {:language_code language-code :count freq})
-          columns (keys row)
+  (when (seq counts)
+    (let [rows (for [[[language-code previous-features current-features] freq] counts]
+                 (let [previous-row (->> (feature-row previous-features)
+                                         (reduce-kv #(assoc %1 (keyword (str "previous_" (name %2))) %3) {}))
+                       current-row (->> (feature-row current-features)
+                                        (reduce-kv #(assoc %1 (keyword (str "current_" (name %2))) %3) {}))]
+                   (merge previous-row current-row
+                          {:language_code language-code :count freq})))
+          columns (keys (first rows))
           column-names (map name columns)
-          placeholders (repeat (count columns) "?")]
-      (jdbc/execute! db
-                     (into [(format "INSERT INTO prior_frequencies (%s) VALUES (%s)
-                                     ON CONFLICT (language_code, previous_feature_key, current_feature_key)
-                                     DO UPDATE SET count = count + excluded.count"
-                                    (clojure.string/join ", " column-names)
-                                    (clojure.string/join ", " placeholders))]
-                           (vals row))))))
+          placeholders (repeat (count columns) "?")
+          sql (format "INSERT INTO prior_frequencies (%s) VALUES (%s)
+                       ON CONFLICT (language_code, previous_feature_key, current_feature_key)
+                       DO UPDATE SET count = count + excluded.count"
+                      (clojure.string/join ", " column-names)
+                      (clojure.string/join ", " placeholders))]
+      (jdbc/execute-batch! db sql (map (fn [row] (map row columns)) rows) {}))))

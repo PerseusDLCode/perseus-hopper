@@ -4,15 +4,14 @@
             [next.jdbc.result-set :as rs]
             [perseus-morph.frequencies.document :as doc-freq]
             [perseus-morph.loader.core :as loader]
-            [perseus-morph.loader.schema :as schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite]))
 
 (defn- temp-db []
   (let [file (java.io.File/createTempFile "loader-core-test" ".db")]
     (.deleteOnExit file)
     (let [db (sqlite/datasource (.getAbsolutePath file))]
-      (schema/init-db! db)
-      (doc-freq/init-db! db)
+      (migrations/migrate! db)
       db)))
 
 (defn- insert-lemma! [db headword language-code]

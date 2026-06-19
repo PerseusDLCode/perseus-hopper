@@ -7,8 +7,7 @@
   (:require [clojure.string]
             [clojure.tools.cli :as cli]
             [next.jdbc :as jdbc]
-            [perseus-morph.frequencies.document :as doc-schema]
-            [perseus-morph.frequencies.schema :as freq-schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite]
             [perseus-morph.walker.core :as walker])
   (:gen-class))
@@ -36,17 +35,19 @@
       :else
       (let [dir (first arguments)
             ds (sqlite/datasource (:db options))]
+        ;; journal_mode=WAL is a database-level setting (persists in the
+        ;; file, applies to every connection opened against it from here
+        ;; on, including walk!'s reader pool) -- set once up front, since
+        ;; the default (one implicit autocommit transaction per INSERT,
+        ;; journal_mode=DELETE) fsyncs on every single upsert, which
+        ;; dominates runtime once write-morph-counts!/write-prior-counts!/
+        ;; write-document-counts! are issuing one statement per row per
+        ;; document. synchronous=NORMAL is also per-connection, but that's
+        ;; already covered for every connection opened from `ds` -- see
+        ;; perseus-morph.sqlite/datasource.
         (with-open [db (jdbc/get-connection ds)]
-          ;; A single connection, held open for the whole walk, with WAL +
-          ;; relaxed synchronous: the default (one implicit autocommit
-          ;; transaction per INSERT, journal_mode=DELETE) fsyncs on every
-          ;; single upsert, which dominates runtime once write-morph-counts!/
-          ;; write-prior-counts!/write-document-counts! are issuing one
-          ;; statement per row per document.
           (jdbc/execute! db ["PRAGMA journal_mode=WAL"])
-          (jdbc/execute! db ["PRAGMA synchronous=NORMAL"])
-          (freq-schema/init-db! db)
-          (doc-schema/init-db! db)
-          (println "Walking" dir "into" (:db options))
-          (let [result (walker/walk! db dir)]
-            (println "Done:" result)))))))
+          (migrations/migrate! db))
+        (println "Walking" dir "into" (:db options))
+        (let [result (walker/walk! ds dir)]
+          (println "Done:" result))))))

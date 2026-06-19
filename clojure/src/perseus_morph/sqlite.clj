@@ -10,6 +10,10 @@
 
 (defn datasource
   "A next.jdbc datasource for the SQLite file at `path`, with foreign key
-   enforcement (and so ON DELETE CASCADE) turned on for every connection."
+   enforcement (and so ON DELETE CASCADE) turned on for every connection,
+   and `synchronous=NORMAL` (vs. SQLite's default FULL) since that pragma
+   is per-connection too -- relevant once more than one connection is in
+   play (e.g. perseus-morph.walker.core/walk!'s writer + reader pool), not
+   just the single long-lived connection callers used to open by hand."
   [path]
-  (jdbc/get-datasource (str "jdbc:sqlite:" path "?foreign_keys=on")))
+  (jdbc/get-datasource (str "jdbc:sqlite:" path "?foreign_keys=on&synchronous=NORMAL")))

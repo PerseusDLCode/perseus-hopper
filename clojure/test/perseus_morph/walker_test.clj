@@ -3,11 +3,9 @@
             [clojure.test :refer [deftest is testing]]
             [next.jdbc :as jdbc]
             [next.jdbc.result-set :as rs]
-            [perseus-morph.frequencies.document :as doc-freq]
-            [perseus-morph.frequencies.schema :as freq-schema]
-            [perseus-morph.loader.schema :as schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite]
-  [perseus-morph.walker.core :as walker]))
+            [perseus-morph.walker.core :as walker]))
 
 (deftest guess-language-code-test
   (testing "canonical-greekLit/canonical-latinLit/First1KGreek filenames"
@@ -94,9 +92,7 @@
   (let [file (java.io.File/createTempFile "corpus-walker-test" ".db")]
     (.deleteOnExit file)
     (let [db (sqlite/datasource (.getAbsolutePath file))]
-      (schema/init-db! db)
-      (freq-schema/init-db! db)
-      (doc-freq/init-db! db)
+      (migrations/migrate! db)
       db)))
 
 (defn- insert-parse! [db {:keys [headword language-code form part-of-speech]}]
@@ -124,7 +120,7 @@
       ;; words' analyses.
       (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :part-of-speech "noun"})
       (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :part-of-speech "verb"})
-      (let [result (walker/process-file! db renamed)]
+      (let [result (walker/process-file! db renamed (java.util.HashMap.))]
         (is (= "grc" (:language-code result)))
         (is (= 2 (:token-count result)))
         (is (= "tlg0012.tlg001.perseus-grc2" (:document-id result)))
@@ -148,4 +144,32 @@
           renamed (io/file (.getParent file) "tlg0012.tlg001.perseus-eng3.xml")]
       (.renameTo file renamed)
       (.deleteOnExit renamed)
-      (is (nil? (walker/process-file! db renamed))))))
+      (is (nil? (walker/process-file! db renamed (java.util.HashMap.)))))))
+
+(deftest walk!-test
+  (testing "walks a directory of files, computing across a reader pool and
+            writing counts serially -- same end result as process-file!,
+            just pipelined"
+    (let [db (temp-db)
+          dir (java.io.File/createTempFile "corpus-walker-test-dir" "")]
+      (.delete dir)
+      (.mkdir dir)
+      (.deleteOnExit dir)
+      (insert-parse! db {:headword "mh=nis" :language-code "grc" :form "mh=nin" :part-of-speech "noun"})
+      (insert-parse! db {:headword "a)ei/dw" :language-code "grc" :form "a)/eide" :part-of-speech "verb"})
+      (let [file-1 (io/file dir "tlg0012.tlg001.perseus-grc2.xml")
+            file-2 (io/file dir "tlg0012.tlg002.perseus-grc1.xml")]
+        (spit file-1 "<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">
+                        <text xml:lang=\"grc\"><body><l>μῆνιν ἄειδε</l></body></text>
+                      </TEI>")
+        (spit file-2 "<TEI xmlns=\"http://www.tei-c.org/ns/1.0\">
+                        <text xml:lang=\"grc\"><body><l>μῆνιν</l></body></text>
+                      </TEI>")
+        (.deleteOnExit file-1)
+        (.deleteOnExit file-2))
+      (let [result (walker/walk! db (.getAbsolutePath dir) :pool-size 2)]
+        (is (= 2 (:files-processed result)))
+        (is (= 3 (:tokens-processed result)))
+        (is (= 2.0 (:count (jdbc/execute-one! db ["SELECT count FROM morph_frequencies
+                                                    WHERE part_of_speech = 'noun'"]
+                                               {:builder-fn rs/as-unqualified-maps}))))))))

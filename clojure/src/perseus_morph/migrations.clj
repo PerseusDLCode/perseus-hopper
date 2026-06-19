@@ -1,8 +1,7 @@
 (ns perseus-morph.migrations
   "Applies the SQL migrations under resources/migrations (loaded via
    Ragtime) to a SQLite database. The schema lives entirely in those
-   .sql files now -- every namespace's init-db! just calls `migrate!`,
-   rather than running its own hand-written CREATE TABLE DDL."
+   .sql files now."
   (:require [ragtime.core :as ragtime]
             [ragtime.next-jdbc :as ragtime-jdbc]))
 

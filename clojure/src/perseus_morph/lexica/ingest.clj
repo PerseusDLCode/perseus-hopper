@@ -11,7 +11,7 @@
             [clojure.string :as str]
             [clojure.tools.cli :as cli]
             [perseus-morph.lexica.core :as lexica]
-            [perseus-morph.lexica.schema :as schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite])
   (:gen-class))
 
@@ -50,7 +50,7 @@
       :else
       (let [[lexicon-id filename] arguments
             db (sqlite/datasource (:db options))]
-        (schema/init-db! db)
+        (migrations/migrate! db)
         (when-not (:no-delete options)
           (println "Deleting existing senses for" lexicon-id)
           (lexica/clear-existing! db lexicon-id))

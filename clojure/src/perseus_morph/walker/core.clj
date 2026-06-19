@@ -178,68 +178,129 @@
 (defn- cached-lookup
   "A (fn [token] parses-grouped-by-lemma) for process-tokens: normalizes
    `token` to its comparable parses.form (see token->form) and wraps
-   perseus-morph.walker.parses/get-parses in a per-document cache, mirroring
+   perseus-morph.walker.parses/get-parses in `cache`, mirroring
    MorphCodeAggregator's `cachedParses` map (keyed there by word+languageCode
-   string concatenation; a plain map keyed by the form string is equivalent
-   since this cache is already scoped to one language per document)."
-  [db language-code]
-  (let [cache (java.util.HashMap.)]
-    (fn [token]
-      (let [form (token->form language-code token)]
-        (or (.get cache form)
-            (let [grouped (parses/get-parses db form language-code)]
-              (.put cache form grouped)
-              grouped))))))
+   string concatenation -- a [language-code form] vector key is equivalent).
+   Unlike the original per-document java.util.HashMap, `cache` here is
+   supplied by the caller and shared corpus-wide (see walk!), since
+   vocabulary repeats heavily across documents and a per-file cache never
+   gets to pay that off."
+  [db language-code ^java.util.Map cache]
+  (fn [token]
+    (let [form (token->form language-code token)
+          cache-key [language-code form]]
+      (or (.get cache cache-key)
+          (let [grouped (parses/get-parses db form language-code)]
+            (.put cache cache-key grouped)
+            grouped)))))
 
-(defn process-file!
-  "Processes one corpus file: skips it (returning nil) unless its filename
-   says it's a Greek or Latin primary text, otherwise tokenizes it and
-   writes its accumulated morph/prior/document frequency counts to `db` --
-   mirroring MorphCodeAggregator#endDocument and WordFrequencyLoader#endDocument's
-   per-document flush, since each of these corpus files already corresponds
-   to one whole document (no further chunking, the way the original's Chunk
-   model allowed). The file's own basename stands in for the document id;
-   see document-id.
+(defn compute-file-counts
+  "The read-only half of processing one corpus file: skips it (returning
+   nil) unless its filename says it's a Greek or Latin primary text,
+   otherwise tokenizes it, looks up every token's candidate parses (via
+   `cache`, see cached-lookup), and accumulates morph/prior/document
+   frequency counts -- everything process-file! used to do except the
+   final write. Takes its own connection (`db`) so it can run concurrently
+   with other readers under SQLite's WAL mode, and with write-file-counts!
+   running on the single writer connection."
+  [db filename cache]
+  (when-let [language-code (guess-language-code filename)]
+    (let [tokens (extract-tokens filename)
+          doc-id (document-id filename)
+          counts (process-tokens language-code doc-id (cached-lookup db language-code cache) tokens)]
+      (assoc counts
+             :filename (str filename) :language-code language-code
+             :document-id doc-id :token-count (count tokens)))))
+
+(defn write-file-counts!
+  "The write half of processing one corpus file: flushes `result` (as
+   returned by compute-file-counts) to `db` -- mirroring
+   MorphCodeAggregator#endDocument and WordFrequencyLoader#endDocument's
+   per-document flush, since each corpus file already corresponds to one
+   whole document (no further chunking, the way the original's Chunk model
+   allowed).
 
    The three write-*! calls run inside one transaction rather than each
    upsert committing (and, under journal_mode=WAL, syncing) on its own --
    a document's worth of counts is the natural unit of \"this should all
    land or none of it should\", and batching them is far cheaper than one
    commit per row."
-  [db filename]
-  (when-let [language-code (guess-language-code filename)]
-    (let [tokens (extract-tokens filename)
-          doc-id (document-id filename)
-          {:keys [morph-counts prior-counts document-counts]}
-          (process-tokens language-code doc-id (cached-lookup db language-code) tokens)]
-      (jdbc/with-transaction [tx db]
-        (agg/write-morph-counts! tx morph-counts)
-        (agg/write-prior-counts! tx prior-counts)
-        (doc-freq/write-document-counts! tx document-counts))
-      {:filename (str filename) :language-code language-code
-       :document-id doc-id :token-count (count tokens)})))
+  [db {:keys [morph-counts prior-counts document-counts] :as result}]
+  (jdbc/with-transaction [tx db]
+    (agg/write-morph-counts! tx morph-counts)
+    (agg/write-prior-counts! tx prior-counts)
+    (doc-freq/write-document-counts! tx document-counts))
+  (dissoc result :morph-counts :prior-counts :document-counts))
+
+(defn process-file!
+  "Processes one corpus file end-to-end: compute-file-counts followed by
+   write-file-counts!, both against `db`. Used directly for single-threaded
+   callers (tests, and walk!'s own per-file fallback isn't needed since
+   walk! pipelines the two phases itself -- see below)."
+  [db filename cache]
+  (when-let [result (compute-file-counts db filename cache)]
+    (write-file-counts! db result)))
+
+(defn- reader-pool
+  "Opens `n` read connections from `ds` into a blocking queue: compute-file-counts
+   tasks borrow a connection with `.take` and return it with `.put`, which
+   bounds actual concurrent SQLite reader connections to `n` regardless of
+   how many threads pmap happens to spin up."
+  ^java.util.concurrent.BlockingQueue [ds n]
+  (let [queue (java.util.concurrent.LinkedBlockingQueue.)]
+    (dotimes [_ n] (.put queue (jdbc/get-connection ds)))
+    queue))
 
 (defn walk!
-  "Walks `dir` recursively, calling process-file! on every .xml file.
-   Non-Greek/Latin files (translations, __cts__.xml metadata, ...) are
-   skipped via process-file!'s filename check; a file that fails to parse
-   is logged and skipped rather than aborting the whole walk, since a
-   multi-corpus directory like ../corpora is large enough that one
-   malformed file shouldn't lose progress on the rest."
-  [db dir & {:keys [log-every] :or {log-every 50}}]
+  "Walks `dir` recursively, computing and writing frequency counts for
+   every .xml file. Non-Greek/Latin files (translations, __cts__.xml
+   metadata, ...) are skipped via compute-file-counts's filename check; a
+   file that fails to process is logged and skipped rather than aborting
+   the whole walk, since a multi-corpus directory like ../corpora is large
+   enough that one malformed file shouldn't lose progress on the rest.
+
+   `ds` is a datasource (not a single connection): walk! opens its own
+   writer connection plus a small pool of `pool-size` reader connections
+   (default `cores - 1`, since the main thread is also writing) from it.
+   compute-file-counts -- parsing, tokenizing, and parse lookups, all
+   read-only -- runs across the reader pool via `pmap`, exploiting SQLite's
+   WAL mode allowing many concurrent readers alongside one writer; the main
+   thread drains that lazy seq in order and calls write-file-counts! on the
+   single writer connection, so writes stay serialized exactly as before."
+  [ds dir & {:keys [log-every pool-size]
+             :or {log-every 50
+                  pool-size (max 1 (dec (.availableProcessors (Runtime/getRuntime))))}}]
   (let [xml-files (->> (file-seq (io/file dir))
                        (filter #(.isFile ^File %))
                        (filter #(clojure.string/ends-with? (.getName ^File %) ".xml")))
+        cache (java.util.concurrent.ConcurrentHashMap.)
+        readers (reader-pool ds pool-size)
         files-processed (volatile! 0)
         tokens-processed (volatile! 0)]
-    (doseq [file xml-files]
-      (try
-        (when-let [{:keys [token-count] :as result} (process-file! db file)]
-          (vswap! files-processed inc)
-          (vswap! tokens-processed + token-count)
-          (when (zero? (mod @files-processed log-every))
-            (println (format "[%5d files, %8d tokens] %s"
-                             @files-processed @tokens-processed (:filename result)))))
-        (catch Exception e
-          (println "WARN: failed to process" (str file) "-" (.getMessage e)))))
+    (try
+      (with-open [write-db (jdbc/get-connection ds)]
+        (doseq [[file outcome]
+                (pmap (fn [file]
+                        (let [conn (.take readers)]
+                          (try
+                            [file (try (compute-file-counts conn file cache)
+                                       (catch Exception e e))]
+                            (finally (.put readers conn)))))
+                      xml-files)]
+          (try
+            (cond
+              (instance? Exception outcome)
+              (throw outcome)
+
+              outcome
+              (let [{:keys [token-count] :as result} (write-file-counts! write-db outcome)]
+                (vswap! files-processed inc)
+                (vswap! tokens-processed + token-count)
+                (when (zero? (mod @files-processed log-every))
+                  (println (format "[%5d files, %8d tokens] %s"
+                                   @files-processed @tokens-processed (:filename result))))))
+            (catch Exception e
+              (println "WARN: failed to process" (str file) "-" (.getMessage e))))))
+      (finally
+        (run! #(.close ^java.sql.Connection %) readers)))
     {:files-processed @files-processed :tokens-processed @tokens-processed}))

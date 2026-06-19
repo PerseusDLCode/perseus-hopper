@@ -5,7 +5,7 @@
   (:require [clojure.string]
             [clojure.tools.cli :as cli]
             [perseus-morph.loader.core :as loader]
-            [perseus-morph.loader.schema :as schema]
+            [perseus-morph.migrations :as migrations]
             [perseus-morph.sqlite :as sqlite])
   (:gen-class))
 
@@ -35,7 +35,7 @@
       (let [filename (first arguments)
             language-code (or (:language options) (loader/guess-language-code filename))
             db (sqlite/datasource (:db options))]
-        (schema/init-db! db)
+        (migrations/migrate! db)
         (when-not (:no-delete options)
           (println "Deleting existing parses for" language-code)
           (loader/delete-by-language! db language-code))

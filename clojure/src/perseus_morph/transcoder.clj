@@ -17,15 +17,24 @@
   (delay (TransCoder. "Unicode" "Perseus Beta Code")))
 
 (defn beta-code->unicode
-  "Converts a Beta Code string to Unicode (NFC), or nil if given nil."
+  "Converts a Beta Code string to Unicode (NFC), or nil if given nil.
+   `locking` serializes access to the shared `decoder` instance: TransCoder
+   isn't documented as thread-safe, and walker.core/walk! now calls into
+   this from multiple reader threads at once -- without the lock, concurrent
+   .getString calls corrupt each other's output (observed as
+   ArrayIndexOutOfBoundsExceptions from TransCoder's internals). Cheap
+   enough to serialize: transcoding is a small fraction of per-token work."
   [s]
   (when s
-    (.getString ^TransCoder @decoder ^String s)))
+    (locking decoder
+      (.getString ^TransCoder @decoder ^String s))))
 
 (defn unicode->beta-code
   "Converts a Unicode Greek string to Beta Code, or nil if given nil. Used
    to turn corpus text (Unicode) into the form ParseLoader stored
-   parses.form in (Beta Code), so corpus tokens can be looked up there."
+   parses.form in (Beta Code), so corpus tokens can be looked up there.
+   See beta-code->unicode re: the `locking` call."
   [s]
   (when s
-    (.getString ^TransCoder @encoder ^String s)))
+    (locking encoder
+      (.getString ^TransCoder @encoder ^String s))))
