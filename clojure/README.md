@@ -50,7 +50,7 @@ files to populate `morph_frequencies` and `prior_frequencies`
 `perseus.morph.MorphCodeAggregator`:
 
 ```sh
-clj -M:aggregate ../corpora
+clj -M:aggregate /path/to/corpora
 ```
 
 By default this writes to `./morph.db`, same as `perseus-morph.loader.load`. Files
