@@ -54,10 +54,7 @@
 (defn normalize-unicode
   "Lowercases `s` and strips combining diacritics via NFD decomposition,
    for the API's lookup index (lemmas.headword_normalized in
-   perseus-morph.loader.schema). Expects already-composed Unicode text
-   (e.g. headword_unicode), not Beta Code -- Beta Code diacritics are
-   markup characters, not combining marks, so they aren't decomposable
-   and must be stripped separately via bare-form."
+   perseus-morph.loader.schema). Expects already-composed Unicode text, not Beta Code."
   [s]
   (when s
     (-> s

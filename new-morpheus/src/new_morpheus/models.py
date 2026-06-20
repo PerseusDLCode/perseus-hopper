@@ -6,7 +6,6 @@ class Lemma(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     headword: str
-    headword_unicode: str | None = None
     bare_headword: str | None = None
     sequence_number: int = -1
     language_code: str

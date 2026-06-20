@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ParseOut(BaseModel):
@@ -31,6 +31,12 @@ class SenseOut(BaseModel):
     sense: str | None
     level: int | None
     definition: str | None
+
+    @field_validator("level")
+    @classmethod
+    def no_level_sentinel(cls, level: int | None) -> int | None:
+        # Clojure writes -1 (not NULL) when a <sense> has no level attribute.
+        return None if level == -1 else level
 
 
 class EntryOut(BaseModel):

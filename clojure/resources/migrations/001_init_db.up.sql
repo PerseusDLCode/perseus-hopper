@@ -12,7 +12,6 @@ INSERT OR IGNORE INTO languages (code, name) VALUES ('ara', 'Arabic')
 CREATE TABLE IF NOT EXISTS lemmas (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   headword TEXT NOT NULL,
-  headword_unicode TEXT,
   headword_normalized TEXT,
   bare_headword TEXT,
   sequence_number INTEGER NOT NULL DEFAULT -1,
