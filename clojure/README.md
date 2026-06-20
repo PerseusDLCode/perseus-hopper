@@ -17,11 +17,7 @@ A Clojure replacement for `perseus.morph.ParseLoader`: loads the
 - Forms/lemmas/headwords are stored exactly as the XML gives them, in genuine
   Unicode for every language (`form`/`expanded_form`/`headword`). The old
   Beta Code `greek.morph.xml` is no longer supported as a load source -- use
-  `greek.morph.unicode.xml` instead -- so the `form_unicode` /
-  `expanded_form_unicode` / `headword_unicode` columns are always `NULL`
-  now; they're kept only so existing `COALESCE(form_unicode, form)` lookups
-  (see `perseus-morph.walker.parses/get-parses`) keep working unchanged.
-
+  `greek.morph.unicode.xml` instead.
 ## Usage
 
 ```sh

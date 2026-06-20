@@ -139,7 +139,7 @@
    update the document-count map, weighted 1/(distinct lemma count) the way
    WordFrequencyLoader's LEMMA strategy does. `lookup` is (fn [token]
    parses-grouped-by-lemma) -- it owns turning a raw corpus token into the
-   comparable form parses.form_unicode was stored in (see token->form) as well as
+   comparable form parses.form was stored in (see token->form) as well as
    any caching, e.g. cached-lookup wrapping perseus-morph.walker.parses/get-parses,
    the way MorphCodeAggregator's `cachedParses` did -- so this function only
    has to know about tokens and their resulting parses, not encodings or the
@@ -175,7 +175,7 @@
 
 (defn- cached-lookup
   "A (fn [token] parses-grouped-by-lemma) for process-tokens: normalizes
-   `token` to its comparable parses.form_unicode (see token->form) and wraps
+   `token` to its comparable parses.form (see token->form) and wraps
    perseus-morph.walker.parses/get-parses in `cache`, mirroring
    MorphCodeAggregator's `cachedParses` map (keyed there by word+languageCode
    string concatenation -- a [language-code form] vector key is equivalent).
