@@ -3,13 +3,17 @@
    perseus.morph.ParseLoader's MySQL/Hibernate-based loading. Lemmas are
    created on the fly from the <lemma> tags in the morph XML itself (rather
    than matched against a pre-populated lexicon-derived `lemmas` table, as
-   the original Java code did), since we don't have that lexicon data here."
+   the original Java code did), since we don't have that lexicon data here.
+
+   Forms and lemmas are taken as-is from the XML, which is expected to
+   already be genuine Unicode (e.g. greek.morph.unicode.xml, not the old
+   Beta Code greek.morph.xml) -- there is no Beta Code-to-Unicode
+   transcoding step here any more."
   (:require [clojure.string]
             [next.jdbc :as jdbc]
             [perseus-morph.features :as features]
   [perseus-morph.language :as lang]
-  [perseus-morph.loader.xml-parser :as xml-parser]
-  [perseus-morph.transcoder :as transcoder])
+  [perseus-morph.loader.xml-parser :as xml-parser])
  (:import (java.io File)))
 
 (def ^:private feature-columns features/feature-tag->column)
@@ -39,16 +43,13 @@
   (let [cache-key [headword sequence-number language-code]]
     (or (.get ^java.util.HashMap cache cache-key)
         (let [bare-headword (lang/bare-form headword)
-              headword-unicode (when (= language-code "grc")
-                                 (transcoder/beta-code->unicode headword))
-              headword-normalized (lang/normalize-unicode
-                                    (or headword-unicode headword))]
+              headword-normalized (lang/normalize-unicode headword)]
           (jdbc/execute! db
                          ["INSERT OR IGNORE INTO lemmas
-                (headword, headword_unicode, headword_normalized,
+                (headword, headword_normalized,
                  bare_headword, sequence_number, language_code)
-              VALUES (?, ?, ?, ?, ?, ?)"
-                          headword headword-unicode headword-normalized
+              VALUES (?, ?, ?, ?, ?)"
+                          headword headword-normalized
                           bare-headword sequence-number language-code])
           (let [id (-> (jdbc/execute-one! db
                                           ["SELECT id FROM lemmas
@@ -70,19 +71,10 @@
                                            headword sequence-number)
             expanded-form (or (get analysis "orth") form)
             bare-form (lang/bare-form form)
-            ;; Unicode is derived from the raw, un-normalized Beta Code (not
-            ;; `form`/`expanded-form`, which have already been lowercased
-            ;; for matching) so capitalization/breathing/accent markers
-            ;; convert faithfully. Only Greek is encoded in Beta Code here.
-            form-unicode (when (= language-code "grc")
-                           (transcoder/beta-code->unicode form-raw))
-            expanded-form-unicode (when (= language-code "grc")
-                                    (transcoder/beta-code->unicode
-                                     (or (get analysis "orth") form-raw)))
             ;; Lets unicode Greek search input (with or without accents)
             ;; match this row, the same way headword_normalized does for
             ;; lemmas -- see lang/normalize-unicode.
-            form-normalized (lang/normalize-unicode form-unicode)
+            form-normalized (lang/normalize-unicode form)
             features (reduce-kv
                       (fn [m tag column]
                         (if-let [v (get analysis tag)]
@@ -92,10 +84,8 @@
                       feature-columns)
             row (merge {:lemma_id lemma-id
                         :form form
-                        :form_unicode form-unicode
                         :form_normalized form-normalized
                         :expanded_form expanded-form
-                        :expanded_form_unicode expanded-form-unicode
                         :bare_form bare-form}
                        features)]
         (assoc row :dedup_key (dedup-key row))))))

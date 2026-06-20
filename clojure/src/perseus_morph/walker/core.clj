@@ -88,10 +88,9 @@
 
 (def ^:private word-pattern
   "Letters and combining marks only -- punctuation, digits, and whitespace
-   are all token boundaries. Elision marks (Greek ᾽/’) and similar
-   diacritics that aren't combining marks fall out as boundaries too,
-   which matches how greek.morph.xml's own forms are recorded (e.g.
-   \"mh=nin\", no elision marker)."
+   are all token boundaries. Elision marks (Greek ᾽/’, or the bare ASCII
+   apostrophe greek.morph.unicode.xml's forms use) fall out as boundaries
+   too, matching how morph.xml's own forms are recorded."
   #"[\p{L}\p{M}]+")
 
 (defn extract-tokens
@@ -119,15 +118,12 @@
 
 (defn- token->form
   "Normalizes a raw Unicode corpus token into the same comparable string
-   perseus-morph.loader.core stored as parses.form_unicode: per-language
+   perseus-morph.loader.core stored as parses.form: per-language
    lowercasing only (lang/normalize-form's greek-lowercase, for Greek, just
-   uncapitalizes a token's initial letter -- the only capitalization
-   morph.xml's own Beta Code source ever marks, via a leading '*' -- so a
-   corpus token's accidental sentence-initial capital still matches a
-   lowercase dictionary form, while a capitalized form like a proper noun's
-   matches as-is). No Beta Code conversion happens here -- morph.xml is the
-   only thing still in Beta Code; both this corpus token and parses.form_unicode
-   are genuine Unicode."
+   uncapitalizes a token's initial letter -- so a corpus token's accidental
+   sentence-initial capital still matches a lowercase dictionary form,
+   while a capitalized form like a proper noun's matches as-is). Both this
+   corpus token and parses.form are genuine Unicode."
   [language-code token]
   (lang/normalize-form language-code token))
 

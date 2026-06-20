@@ -1,8 +1,8 @@
 # perseus-morph
 
 A Clojure replacement for `perseus.morph.ParseLoader`: loads the
-`greek.morph.xml` / `latin.morph.xml` morphology files into a **SQLite**
-database instead of MySQL (via Hibernate).
+`greek.morph.unicode.xml` / `latin.morph.xml` morphology files into a
+**SQLite** database instead of MySQL (via Hibernate).
 
 ## Differences from the original Java `ParseLoader`
 
@@ -14,20 +14,18 @@ database instead of MySQL (via Hibernate).
   columns on `parses` rather than packed into a compact per-language
   `morph_code` string (that encoding existed to save space in MySQL; it
   doesn't matter for SQLite).
-- Greek forms/lemmas are additionally converted from Beta Code to precomposed
-  Unicode at load time, into `form_unicode`/`expanded_form_unicode` (on
-  `parses`) and `headword_unicode` (on `lemmas`), using the same UNC Epidoc
-  TransCoder library (`../reading/lib/transcoder.jar`) the original Java app
-  uses for Greek rendering (`perseus.document.GreekFilter`). The original
-  Beta Code is still kept in `form`/`expanded_form`/`headword` (lowercased,
-  for matching) and `bare_form`/`bare_headword` (diacritics stripped). Latin
-  is already written in plain Latin script, so its `*_unicode` columns are
-  left `NULL`.
+- Forms/lemmas/headwords are stored exactly as the XML gives them, in genuine
+  Unicode for every language (`form`/`expanded_form`/`headword`). The old
+  Beta Code `greek.morph.xml` is no longer supported as a load source -- use
+  `greek.morph.unicode.xml` instead -- so the `form_unicode` /
+  `expanded_form_unicode` / `headword_unicode` columns are always `NULL`
+  now; they're kept only so existing `COALESCE(form_unicode, form)` lookups
+  (see `perseus-morph.walker.parses/get-parses`) keep working unchanged.
 
 ## Usage
 
 ```sh
-clj -M:load ../xml/data/greek.morph.xml
+clj -M:load ../xml/data/greek.morph.unicode.xml
 clj -M:load ../xml/data/latin.morph.xml
 ```
 

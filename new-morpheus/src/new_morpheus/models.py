@@ -20,10 +20,8 @@ class Parse(SQLModel, table=True):
     # No language_code column: it's a transitive duplicate of lemma_id ->
     # Lemma.language_code (see clojure/src/perseus_morph/loader/schema.clj).
     form: str
-    form_unicode: str | None = None
     form_normalized: str | None = None
     expanded_form: str | None = None
-    expanded_form_unicode: str | None = None
     bare_form: str | None = None
     part_of_speech: str | None = None
     person: str | None = None
@@ -47,8 +45,11 @@ class Sense(SQLModel, table=True):
     __tablename__ = "senses"
 
     id: int | None = Field(default=None, primary_key=True)
-    entry_id: int = -1
-    sense_id: int = -1
+    # Strings, not ints: lettered ids (e.g. "14773a", "9b") distinguish
+    # homonym entries and lettered sub-senses. See
+    # clojure/src/perseus_morph/lexica/core.clj.
+    entry_id: str = "-1"
+    sense_id: str = "-1"
     document_id: str
     # Despite the name, this holds "entry=" + the lexicon entry's `key`
     # attribute, not a headword. See clojure/src/perseus_morph/lexica/schema.clj.

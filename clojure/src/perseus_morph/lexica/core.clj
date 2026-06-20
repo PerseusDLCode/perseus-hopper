@@ -13,8 +13,11 @@
             [perseus-morph.lexica.xml-parser :as xml-parser]))
 
 (def ^:private id-pattern
-  "Mirrors perseus.voting.VoteManager.ID_PATTERN."
-  #"n(\d+)\.(\d+)")
+  "Extends perseus.voting.VoteManager.ID_PATTERN (n(\\d+)\\.(\\d+)) to allow
+   letter suffixes on either half, e.g. \"n14773a.9\" or \"n0.9a\". Lettered
+   entry/sense ids distinguish homonyms and lettered sub-senses, so both
+   halves are kept as strings rather than parsed to ints."
+  #"n(\d+[a-zA-Z]*)\.(\d+[a-zA-Z]*)")
 
 (def ^:private meaning-tags
   "Mirrors SenseLoaderHandler's constructor: which markup tag wraps each
@@ -31,14 +34,14 @@
   (get meaning-tags lexicon-id "i"))
 
 (defn- parse-ids
-  "Splits a sense's `id` attribute (e.g. \"n12.34\") into [entry-id
-   sense-id], or [-1 -1] (with a warning) if it doesn't match, mirroring
-   SenseLoader.insertSense's handling of a malformed id."
+  "Splits a sense's `id` attribute (e.g. \"n12.34\" or \"n14773a.9b\") into
+   [entry-id sense-id], or [\"-1\" \"-1\"] (with a warning) if it doesn't
+   match, mirroring SenseLoader.insertSense's handling of a malformed id."
   [id]
   (if-let [[_ entry sense] (re-matches id-pattern (or id ""))]
-    [(Integer/parseInt entry) (Integer/parseInt sense)]
+    [entry sense]
     (do (println "WARN: Error getting IDs for" id)
-        [-1 -1])))
+        ["-1" "-1"])))
 
 (defn clear-existing!
   "Deletes any existing senses and entries for `lexicon-id`, mirroring

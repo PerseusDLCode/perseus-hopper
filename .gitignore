@@ -35,3 +35,4 @@ replay_pid*
 .clj-kondo
 .cpcache
 .lsp
+greek.morph.unicode.xml

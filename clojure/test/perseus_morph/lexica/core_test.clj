@@ -44,21 +44,32 @@
 
     (testing "a well-formed id is split into entry_id/sense_id, and the lemma column
               holds SenseLoader's lexQuery (\"entry=\" + the entry's key), not the headword"
-      (is (= {:entry_id 1 :sense_id 1 :document_id "Perseus:text:1999.04.0057"
+      (is (= {:entry_id "1" :sense_id "1" :document_id "Perseus:text:1999.04.0057"
               :lemma "entry=mh=nis" :sense "1" :level 1
               :definition "wrath, <g>anger</g>"}
-             (-> (query-all db "SELECT * FROM senses WHERE sense_id = 1")
+             (-> (query-all db "SELECT * FROM senses WHERE sense_id = '1'")
                  first
                  (dissoc :id)))))
 
     (testing "a sense with no level attribute defaults level to -1, matching SenseLoader"
-      (is (= -1 (:level (first (query-all db "SELECT level FROM senses WHERE sense_id = 2"))))))
+      (is (= -1 (:level (first (query-all db "SELECT level FROM senses WHERE sense_id = '2'"))))))
 
     (testing "a sense whose id doesn't match the entry.sense pattern gets entry_id/sense_id -1"
-      (is (= {:entry_id -1 :sense_id -1}
+      (is (= {:entry_id "-1" :sense_id "-1"}
              (-> (query-all db "SELECT entry_id, sense_id FROM senses WHERE sense = '3'")
                  first
-                 (select-keys [:entry_id :sense_id])))))))
+                 (select-keys [:entry_id :sense_id])))))
+
+    (testing "a lettered id (homonym entry / lettered sub-sense) keeps its letter suffix"
+      (let [file (write-temp-xml
+                  "<entryFree key=\"lettered\">
+                     <sense id=\"n14773a.9b\" n=\"9b\"><tr>lettered</tr></sense>
+                   </entryFree>")]
+        (lexica/load! db "Perseus:text:1999.04.0057" file)
+        (is (= {:entry_id "14773a" :sense_id "9b"}
+               (-> (query-all db "SELECT entry_id, sense_id FROM senses WHERE sense = '9b'")
+                   first
+                   (select-keys [:entry_id :sense_id]))))))))
 
 (deftest load!-stores-full-untruncated-definitions-test
   (let [db (temp-db)

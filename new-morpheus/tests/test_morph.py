@@ -31,11 +31,10 @@ def test_lookup_by_exact_form_finds_known_lemma():
 
 
 def test_lookup_falls_back_to_bare_form_when_accented_form_has_no_exact_match():
-    # "'enuw/" is stored as the parses.form; the accent-stripped variant
-    # below should only match via bare_form, mirroring MorphController's
-    # second getParses() call. The response headword comes back in Unicode
-    # ("Ἐνυώ"), not the underlying Beta Code lemma key ("*)enuw/") -- the
-    # API speaks Unicode, per main.py's beta_code_to_greek conversion for grc.
+    # "enuw/" is itself Beta Code for Ἐνύω -- morph.db only stores Unicode
+    # now, so the direct/bare_form/form_normalized tiers all miss, and this
+    # only succeeds via lookup_parses's Beta Code fallback (which converts
+    # to "ἐνύω" via beta_code.beta_code_to_greek and retries).
     response = client.get("/morph", params={"word": "enuw/", "language": "grc"})
 
     assert response.status_code == 200
@@ -43,42 +42,9 @@ def test_lookup_falls_back_to_bare_form_when_accented_form_has_no_exact_match():
     assert any(lemma["headword"] == "Ἐνυώ" for lemma in body["lemmas"])
 
 
-def test_lookup_matches_form_unicode_for_unicode_greek_input():
-    # morph.db doesn't have form_unicode fixture data wired up to a known
-    # Unicode Greek search term, so this exercises the query against a
-    # throwaway db of its own, the same way the entries test above does.
-    # parses.form stays Beta Code (morph.xml's own encoding); the search
-    # term here is genuine Unicode, so only form_unicode (this lookup's
-    # first tier) should match -- mirroring perseus-morph.walker.parses on
-    # the Clojure side.
-    with tempfile.NamedTemporaryFile(suffix=".db") as db_file:
-        test_engine = create_engine(f"sqlite:///{db_file.name}")
-        SQLModel.metadata.create_all(test_engine, tables=[Lemma.__table__, Parse.__table__])
-        with Session(test_engine) as session:
-            lemma = Lemma(headword="*)enuw/", language_code="grc")
-            session.add(lemma)
-            session.commit()
-            session.add(
-                Parse(
-                    lemma_id=lemma.id,
-                    form="'enuw/",
-                    form_unicode="ἐνύω",
-                    form_normalized="ενυω",
-                    bare_form="enuw",
-                    dedup_key="x",
-                )
-            )
-            session.commit()
-
-        with Session(test_engine) as session:
-            grouped = lookup_parses(session, "ἐνύω", "grc")
-            assert [headword for headword, _ in grouped] == ["*)enuw/"]
-
-
 def test_lookup_falls_back_to_form_normalized_for_accented_unicode_variant():
-    # form_unicode keeps its original case/accents as derived from the raw
-    # Beta Code form (see perseus_morph.loader.core/analysis->parse-row on
-    # the Clojure side), so an accented variant that doesn't match it
+    # Same legacy fixture shape as the test above: form_unicode keeps its
+    # original case/accents, so an accented variant that doesn't match it
     # exactly -- but does match once diacritics are stripped and both sides
     # are lowercased -- only matches via this third tier.
     with tempfile.NamedTemporaryFile(suffix=".db") as db_file:
@@ -91,8 +57,7 @@ def test_lookup_falls_back_to_form_normalized_for_accented_unicode_variant():
             session.add(
                 Parse(
                     lemma_id=lemma.id,
-                    form="'enuw/",
-                    form_unicode="ἐνύω",
+                    form="ἐνύω",
                     form_normalized="ενυω",
                     bare_form="enuw",
                     dedup_key="x",

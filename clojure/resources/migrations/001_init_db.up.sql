@@ -30,10 +30,8 @@ CREATE TABLE IF NOT EXISTS parses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   lemma_id INTEGER NOT NULL REFERENCES lemmas (id) ON DELETE CASCADE,
   form TEXT NOT NULL,
-  form_unicode TEXT,
   form_normalized TEXT,
   expanded_form TEXT,
-  expanded_form_unicode TEXT,
   bare_form TEXT,
   part_of_speech TEXT,
   person TEXT,
@@ -137,8 +135,8 @@ CREATE INDEX IF NOT EXISTS idx_prior_frequencies_language
 --;;
 CREATE TABLE IF NOT EXISTS senses (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  entry_id INTEGER NOT NULL DEFAULT -1,
-  sense_id INTEGER NOT NULL DEFAULT -1,
+  entry_id TEXT NOT NULL DEFAULT '-1',
+  sense_id TEXT NOT NULL DEFAULT '-1',
   document_id TEXT NOT NULL,
   lemma TEXT NOT NULL,
   sense TEXT,

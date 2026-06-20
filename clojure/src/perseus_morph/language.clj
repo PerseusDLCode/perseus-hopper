@@ -13,9 +13,16 @@
   (when s
     (clojure.string/replace s bare-word-pattern "")))
 
-(defn- uncapitalize [^String s]
-  (if (and (seq s) (Character/isUpperCase (.charAt s 0)))
-    (str (Character/toLowerCase (.charAt s 0)) (subs s 1))
+(defn- uncapitalize
+  "Lowercases the first letter of `s`, skipping any leading non-letter
+   characters (e.g. the elision apostrophe greek.morph.unicode.xml's forms
+   sometimes lead with, like \"'Ελλάδος\") so a capital isn't missed just
+   because it isn't literally the first character."
+  [^String s]
+  (if-let [i (first (filter #(Character/isLetter (.charAt s %)) (range (count s))))]
+    (if (Character/isUpperCase (.charAt s i))
+      (str (subs s 0 i) (Character/toLowerCase (.charAt s i)) (subs s (inc i)))
+      s)
     s))
 
 (defn- greek-lowercase [s]

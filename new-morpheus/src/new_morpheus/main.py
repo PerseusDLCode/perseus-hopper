@@ -1,6 +1,5 @@
 import os
 
-import beta_code
 import uvicorn
 from fastapi import Depends, FastAPI
 from sqlmodel import Session
@@ -51,9 +50,7 @@ def morph(
     # by standardizing on Unicode everywhere.
     lemmas = [
         LemmaResult(
-            headword=beta_code.beta_code_to_greek(headword)
-            if language == "grc"
-            else headword,
+            headword=headword,
             sequence_number=sequence_number,
             parses=[
                 ParseOut.model_validate(parse).model_copy(
@@ -66,9 +63,7 @@ def morph(
                 for sense in lookup_senses(
                     session,
                     language,
-                    beta_code.beta_code_to_greek(headword)
-                    if language == "grc"
-                    else headword,
+                    headword,
                     sequence_number,
                 )
             ],
@@ -77,9 +72,7 @@ def morph(
                 for entry in lookup_entries(
                     session,
                     language,
-                    beta_code.beta_code_to_greek(headword)
-                    if language == "grc"
-                    else headword,
+                    headword,
                     sequence_number,
                 )
             ],

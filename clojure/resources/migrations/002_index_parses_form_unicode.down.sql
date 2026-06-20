@@ -1,1 +1,0 @@
-DROP INDEX IF EXISTS idx_parses_form_unicode_coalesced

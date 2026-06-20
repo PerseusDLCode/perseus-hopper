@@ -5,9 +5,7 @@ class ParseOut(BaseModel):
     model_config = {"from_attributes": True}
 
     form: str
-    form_unicode: str | None
     expanded_form: str | None
-    expanded_form_unicode: str | None
     part_of_speech: str | None
     person: str | None
     number: str | None

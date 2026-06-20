@@ -1,3 +1,4 @@
+import beta_code
 from sqlalchemy import func, text
 from sqlmodel import Session, select
 
@@ -56,37 +57,27 @@ def _parses_matching(
 def _parses_matching_unicode_form(
     session: Session, language_code: str, value: str
 ) -> list[tuple[Parse, Lemma]]:
-    """Like _parses_matching, but against COALESCE(form_unicode, form):
-    perseus_morph.loader.core only ever populates form_unicode for Greek
-    (the only language morph.xml encodes in Beta Code) -- Latin/Arabic
-    forms are already plain text in `form` itself, with form_unicode left
-    NULL, so matching form_unicode alone would silently never match a
-    non-Greek row. Mirrors perseus-morph.walker.parses/get-parses on the
-    Clojure side."""
     statement = (
         select(Parse, Lemma)
         .join(Lemma, Parse.lemma_id == Lemma.id)
         .where(
-            func.coalesce(Parse.form_unicode, Parse.form) == value,
+            Parse.form == value,
             Lemma.language_code == language_code,
         )
     )
     return list(session.exec(statement))
 
 
-def lookup_parses(
-    session: Session, word: str, language_code: str
-) -> dict[LemmaKey, list[Parse]]:
-    """Mirrors MorphController's lookup, but against Unicode: try the word
-    as typed (normalized for case) against COALESCE(form_unicode, form) --
-    not just the still-Beta-Code form column, since morph.xml (and so
-    parses.form) stays in Beta Code for Greek while everything downstream
-    speaks Unicode, mirroring perseus-morph.walker.parses/get-parses on the
-    Clojure side. Falls back to bare_form with diacritics stripped (matching
-    MorphController's second getParses() call, for callers who still pass
-    Beta Code), and beyond that to form_normalized, so accented/cased
-    Unicode Greek input matches too, mirroring how lemmas.headword_normalized
-    supports Unicode lemma lookups."""
+def _lookup_parses_for_word(
+    session: Session, language_code: str, word: str
+) -> list[tuple[Parse, Lemma]]:
+    """The three-tier Unicode lookup mirroring MorphController's lookup: try
+    `word` as typed (normalized for case) against form, then
+    fall back to bare_form with diacritics stripped (matching
+    MorphController's second getParses() call), and beyond that to
+    form_normalized, so accented/cased Unicode Greek input matches too,
+    mirroring how lemmas.headword_normalized supports Unicode lemma
+    lookups."""
     normalized = normalize_form(language_code, word)
     rows = _parses_matching_unicode_form(session, language_code, normalized)
     if not rows:
@@ -95,6 +86,29 @@ def lookup_parses(
         rows = _parses_matching(
             session, language_code, "form_normalized", normalize_unicode(word)
         )
+    return rows
+
+
+def lookup_parses(
+    session: Session, word: str, language_code: str
+) -> dict[LemmaKey, list[Parse]]:
+    """Looks up `word`'s candidate parses (see _lookup_parses_for_word).
+    morph.db only stores Unicode now, but some callers (old clients,
+    copy-pasted Perseus URLs, ...) may still send Greek as Beta Code -- if
+    the direct lookup comes up empty, retry once with `word` converted from
+    Beta Code to Unicode via the `beta_code` package (the same library
+    scripts/convert_morph_to_unicode.py used to build
+    greek.morph.unicode.xml). beta_code_to_greek leaves genuine Unicode
+    input unchanged, so this is skipped rather than wasting a duplicate
+    lookup when `word` wasn't Beta Code to begin with. Only attempted for
+    Greek -- beta_code_to_greek blindly transliterates any ASCII letters,
+    so running it for Latin/Arabic input would risk a bogus match instead
+    of correctly coming up empty."""
+    rows = _lookup_parses_for_word(session, language_code, word)
+    if not rows and language_code == "grc":
+        converted = beta_code.beta_code_to_greek(word)
+        if converted != word:
+            rows = _lookup_parses_for_word(session, language_code, converted)
     return _group_by_lemma(rows)
 
 
